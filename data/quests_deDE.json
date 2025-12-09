@@ -1,0 +1,110 @@
+[
+  {
+    "quest_id": 176,
+    "title": "GESUCHT: \"Hogger\"",
+    "description": "Gesucht: Hogger\n\nEin riesiger Gnoll namens Hogger terrorisiert die Farmer im Südwesten des Waldes von Elwynn. Der Magistrat von Goldhain hat eine Belohnung für jeden ausgesetzt, der dieses Untier zur Strecke bringt.\n\nBringt mir seinen Kopf als Beweis Eures Sieges.",
+    "objectives": "Tötet Hogger und bringt Marschall Dughan in Goldhain seinen Kopf.",
+    "completion": "Ihr habt Hogger besiegt! Die Farmer können endlich wieder in Frieden arbeiten. Hier ist Eure Belohnung, Held.",
+    "zone": "Wald von Elwynn",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 54,
+    "title": "Der Weinende Witwer",
+    "description": "Meine Frau... sie wurde von diesen verdammten Murlocs getötet. Sie wollte nur Wasser vom See holen.\n\nBitte, rächt ihren Tod! Tötet diese Monster!",
+    "objectives": "Tötet 8 Murlocs am Steinbruchweiher.",
+    "completion": "Danke, Freund. Vielleicht kann ihre Seele nun endlich Frieden finden.",
+    "zone": "Wald von Elwynn",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 783,
+    "title": "Die Bedrohung aus dem Dunkel",
+    "description": "Die Defias-Bruderschaft plant einen Angriff auf Sturmwind! Wir haben Informationen abgefangen, die auf einen massiven Angriff hindeuten.\n\nIhr müsst in die Todesminen eindringen und Edwin VanCleef ausschalten, bevor es zu spät ist.",
+    "objectives": "Tötet Edwin VanCleef in den Todesminen.",
+    "completion": "VanCleef ist tot? Ausgezeichnet! Sturmwind ist sicher... vorerst.",
+    "zone": "Westfall",
+    "is_main_story": true
+  },
+  {
+    "quest_id": 65,
+    "title": "Kopfgeldjäger",
+    "description": "Die Defias-Bande treibt ihr Unwesen in ganz Westfall. Wir brauchen jemanden, der aufräumt.\n\nBringt mir die roten Masken dieser Banditen als Beweis für ihre Niederlage.",
+    "objectives": "Sammelt 15 rote Defias-Masken.",
+    "completion": "Gute Arbeit! Das sollte sie eine Weile beschäftigt halten.",
+    "zone": "Westfall",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 1001,
+    "title": "Der verlorene Prinz",
+    "description": "Prinz Arthas wurde zuletzt in Lordaeron gesehen. Die Gerüchte besagen, er habe sich verändert... zum Schlechteren.\n\nFindet heraus, was mit ihm geschehen ist. Die Zukunft des Königreichs hängt davon ab.",
+    "objectives": "Untersucht die Ruinen von Lordaeron.",
+    "completion": "Was Ihr berichtet, ist beunruhigend. Arthas... ein Todesritter? Das kann nicht sein!",
+    "zone": "Tirisfal",
+    "is_main_story": true
+  },
+  {
+    "quest_id": 234,
+    "title": "Gnoll-Pelze",
+    "description": "Die Gnolls im Wald von Elwynn haben wunderbar warme Pelze. Ich könnte sie gut für meine Schneiderei gebrauchen.\n\nBringt mir ein paar davon, und ich werde Euch gut entlohnen.",
+    "objectives": "Sammelt 10 Gnoll-Pelze.",
+    "completion": "Perfekt! Diese Pelze werden sich hervorragend verarbeiten lassen.",
+    "zone": "Wald von Elwynn",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 567,
+    "title": "Die verfluchte Karawane",
+    "description": "Letzte Woche verschwand eine Karawane auf dem Weg nach Dunkelhain. Niemand weiß, was mit den Händlern geschah.\n\nDie Straßen durch den Dämmerwald sind nicht sicher. Geht der Sache auf den Grund.",
+    "objectives": "Findet die vermisste Karawane im Dämmerwald.",
+    "completion": "Die Karawane wurde von Werwölfen überfallen? Bei allem, was heilig ist...",
+    "zone": "Dämmerwald",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 890,
+    "title": "Dunkelheit über Dunkelhain",
+    "description": "Die Dunkelheit breitet sich aus. Unsere Stadt wird von allen Seiten bedroht - Worgen aus dem Wald, Untote aus dem Friedhof, und Dinge, die ich nicht einmal benennen kann.\n\nWir brauchen Hilfe. Dringend.",
+    "objectives": "Sprecht mit dem Bürgermeister von Dunkelhain.",
+    "completion": "Endlich jemand, der uns helfen kann. Möge das Licht Euch beistehen.",
+    "zone": "Dämmerwald",
+    "is_main_story": true
+  },
+  {
+    "quest_id": 112,
+    "title": "Das Kobold-Problem",
+    "description": "Diese vermaledeiten Kobolde haben unsere Mine übernommen! 'Ihr nehmt nicht Kerze!' schreien sie ständig.\n\nVertreibt diese Plagegeister aus der Fargodeep-Mine.",
+    "objectives": "Tötet 12 Kobolde in der Fargodeep-Mine.",
+    "completion": "Die Kobolde sind vertrieben? Ausgezeichnet! Jetzt können wir endlich wieder Erz abbauen.",
+    "zone": "Wald von Elwynn",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 445,
+    "title": "Die Ernte retten",
+    "description": "Die Defias haben unsere Felder in Brand gesteckt! Wenn wir die Ernte nicht retten, werden wir den Winter nicht überleben.\n\nBitte, helft uns, die Flammen zu löschen!",
+    "objectives": "Löscht 8 brennende Felder in Westfall.",
+    "completion": "Ihr habt uns gerettet! Ohne Eure Hilfe wären wir verloren gewesen.",
+    "zone": "Westfall",
+    "is_main_story": false
+  },
+  {
+    "quest_id": 1234,
+    "title": "Die Seuche von Andorhal",
+    "description": "Die Seuche, die einst Lordaeron zerstörte, wütet noch immer in Andorhal. Die Getreidespeicher sind kontaminiert, und die Untoten erheben sich aus ihren Gräbern.\n\nWir müssen die Quelle der Seuche finden und vernichten.",
+    "objectives": "Untersucht die Getreidespeicher in Andorhal und vernichtet 5 Seuchenkrüge.",
+    "completion": "Die Seuchenkrüge sind zerstört, aber der Schaden ist bereits angerichtet. Mögen die Seelen der Gefallenen Frieden finden.",
+    "zone": "Westliche Pestländer",
+    "is_main_story": true
+  },
+  {
+    "quest_id": 789,
+    "title": "Kel'Thuzads Fluch",
+    "description": "Der Lich Kel'Thuzad mag gefallen sein, doch sein Einfluss reicht weit über seinen Tod hinaus. In Scholomance bildet er noch immer Nekromanten aus.\n\nInfiltriert die Festung und stoppt seine finsteren Machenschaften.",
+    "objectives": "Besiegt 3 Nekromanten-Lehrmeister in Scholomance.",
+    "completion": "Kel'Thuzads Macht schwindet, aber wir dürfen nicht nachlassen. Der Kampf gegen die Geißel ist noch lange nicht vorbei.",
+    "zone": "Westliche Pestländer",
+    "is_main_story": true
+  }
+]
