@@ -21,7 +21,13 @@ namespace WowQuestTtsTool.Services
         public PathsConfig Paths { get; set; } = new();
 
         [JsonPropertyName("voice_profiles")]
-        public Dictionary<string, VoiceProfile> VoiceProfiles { get; set; } = new();
+        public Dictionary<string, VoiceProfile> VoiceProfiles { get; set; } = [];
+
+        /// <summary>
+        /// LLM-Konfiguration fuer Text-Optimierung (Hoerbuch-Feeling).
+        /// </summary>
+        [JsonPropertyName("llm")]
+        public LlmConfig Llm { get; set; } = new();
     }
 
     public class BlizzardConfig
@@ -95,15 +101,171 @@ namespace WowQuestTtsTool.Services
 
     public class VoiceProfile
     {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+
         [JsonPropertyName("voice_id")]
         public string VoiceId { get; set; } = "";
 
+        [JsonPropertyName("provider")]
+        public string Provider { get; set; } = "ElevenLabs";
+
+        [JsonPropertyName("language")]
+        public string Language { get; set; } = "de-DE";
+
         [JsonPropertyName("description")]
         public string Description { get; set; } = "";
+
+        [JsonPropertyName("gender")]
+        public string Gender { get; set; } = ""; // male, female, neutral
+
+        [JsonPropertyName("style")]
+        public string Style { get; set; } = ""; // narrator, character, epic, calm, etc.
+
+        // ==================== TTS-Feintuning Einstellungen ====================
+
+        /// <summary>
+        /// Stabilitaet der Stimme (0.0 = variabel/expressiv, 1.0 = stabil/konsistent).
+        /// Hoehere Werte = gleichmaessigere Stimme, niedrigere = mehr Variation.
+        /// </summary>
+        [JsonPropertyName("stability")]
+        public double Stability { get; set; } = 0.5;
+
+        /// <summary>
+        /// Aehnlichkeitsverstaerkung (0.0 = niedrig, 1.0 = hoch).
+        /// Hoehere Werte = mehr wie das Original-Stimmmodell.
+        /// </summary>
+        [JsonPropertyName("similarity_boost")]
+        public double SimilarityBoost { get; set; } = 0.75;
+
+        /// <summary>
+        /// Stil-Intensitaet (0.0 = neutral, 1.0 = stark stilisiert).
+        /// Fuer ElevenLabs: Wie stark der Stil der Stimme zum Ausdruck kommt.
+        /// </summary>
+        [JsonPropertyName("style_intensity")]
+        public double StyleIntensity { get; set; } = 0.0;
+
+        /// <summary>
+        /// Speaker-Boost aktivieren (verbessert Stimmklarheit).
+        /// </summary>
+        [JsonPropertyName("use_speaker_boost")]
+        public bool UseSpeakerBoost { get; set; } = true;
+
+        /// <summary>
+        /// Sprechgeschwindigkeit (0.5 = langsam, 1.0 = normal, 1.5 = schnell).
+        /// Nicht alle Provider unterstuetzen dies direkt.
+        /// </summary>
+        [JsonPropertyName("speed")]
+        public double Speed { get; set; } = 1.0;
+
+        /// <summary>
+        /// Pausen-Multiplikator fuer Satzenden (1.0 = normal, 1.5 = laengere Pausen).
+        /// Wird per SSML oder Textmanipulation umgesetzt.
+        /// </summary>
+        [JsonPropertyName("pause_multiplier")]
+        public double PauseMultiplier { get; set; } = 1.0;
+
+        /// <summary>
+        /// Pitch/Tonhoehe Anpassung (-1.0 = tiefer, 0 = normal, 1.0 = hoeher).
+        /// Nicht alle Provider unterstuetzen dies.
+        /// </summary>
+        [JsonPropertyName("pitch")]
+        public double Pitch { get; set; } = 0.0;
+
+        // ==================== Erweiterte Prosodie-Einstellungen ====================
+
+        /// <summary>
+        /// Text-Vorverarbeitung: Fuegt Atempausen nach bestimmten Interpunktionen ein.
+        /// </summary>
+        [JsonPropertyName("add_breath_pauses")]
+        public bool AddBreathPauses { get; set; } = false;
+
+        /// <summary>
+        /// Prosodie-Preset (none, calm, dramatic, epic, conversational).
+        /// </summary>
+        [JsonPropertyName("prosody_preset")]
+        public string ProsodyPreset { get; set; } = "none";
+
+        /// <summary>
+        /// Anzeigename für UI (Name + Beschreibung)
+        /// </summary>
+        [JsonIgnore]
+        public string DisplayName => string.IsNullOrEmpty(Description) ? Name : $"{Name} - {Description}";
+
+        /// <summary>
+        /// Kurzinfo fuer UI (Gender + Style).
+        /// </summary>
+        [JsonIgnore]
+        public string ShortInfo => $"{GenderDisplayName}, {StyleDisplayName}";
+
+        /// <summary>
+        /// Gender-Anzeigename.
+        /// </summary>
+        [JsonIgnore]
+        public string GenderDisplayName => Gender?.ToLowerInvariant() switch
+        {
+            "male" => "Maennlich",
+            "female" => "Weiblich",
+            "neutral" => "Neutral",
+            _ => "Unbekannt"
+        };
+
+        /// <summary>
+        /// Style-Anzeigename.
+        /// </summary>
+        [JsonIgnore]
+        public string StyleDisplayName => Style?.ToLowerInvariant() switch
+        {
+            "narrator" => "Erzaehler",
+            "epic" => "Episch",
+            "calm" => "Ruhig",
+            "dramatic" => "Dramatisch",
+            "conversational" => "Gespraechig",
+            "character" => "Charakter",
+            _ => Style ?? "Standard"
+        };
+
+        /// <summary>
+        /// Erstellt ElevenLabs VoiceSettings aus diesem Profil.
+        /// </summary>
+        public VoiceSettings ToVoiceSettings()
+        {
+            return new VoiceSettings
+            {
+                Stability = Stability,
+                SimilarityBoost = SimilarityBoost,
+                Style = StyleIntensity,
+                UseSpeakerBoost = UseSpeakerBoost
+            };
+        }
+
+        /// <summary>
+        /// Erstellt eine Kopie des Profils
+        /// </summary>
+        public VoiceProfile Clone() => new()
+        {
+            Name = Name,
+            VoiceId = VoiceId,
+            Provider = Provider,
+            Language = Language,
+            Description = Description,
+            Gender = Gender,
+            Style = Style,
+            Stability = Stability,
+            SimilarityBoost = SimilarityBoost,
+            StyleIntensity = StyleIntensity,
+            UseSpeakerBoost = UseSpeakerBoost,
+            Speed = Speed,
+            PauseMultiplier = PauseMultiplier,
+            Pitch = Pitch,
+            AddBreathPauses = AddBreathPauses,
+            ProsodyPreset = ProsodyPreset
+        };
     }
 
     public class TtsConfigService
     {
+        private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
         private readonly string _configPath;
         private TtsConfig? _config;
 
@@ -149,8 +311,7 @@ namespace WowQuestTtsTool.Services
                 Directory.CreateDirectory(directory);
             }
 
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var json = JsonSerializer.Serialize(config, options);
+            var json = JsonSerializer.Serialize(config, s_jsonOptions);
             File.WriteAllText(_configPath, json);
             _config = config;
         }
@@ -162,6 +323,48 @@ namespace WowQuestTtsTool.Services
                 return profile.VoiceId;
             }
             return Config.ElevenLabs.VoiceId;
+        }
+
+        /// <summary>
+        /// Gibt ein VoiceProfile anhand des Namens zurück.
+        /// </summary>
+        public VoiceProfile? GetVoiceProfile(string profileName)
+        {
+            if (Config.VoiceProfiles.TryGetValue(profileName, out var profile))
+            {
+                return profile;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Gibt alle verfügbaren Voice-Profile zurück.
+        /// </summary>
+        public IEnumerable<KeyValuePair<string, VoiceProfile>> GetAllVoiceProfiles()
+        {
+            return Config.VoiceProfiles;
+        }
+
+        /// <summary>
+        /// Fügt ein neues Voice-Profil hinzu oder aktualisiert ein bestehendes.
+        /// </summary>
+        public void SaveVoiceProfile(string key, VoiceProfile profile)
+        {
+            Config.VoiceProfiles[key] = profile;
+            SaveConfig(Config);
+        }
+
+        /// <summary>
+        /// Entfernt ein Voice-Profil.
+        /// </summary>
+        public bool RemoveVoiceProfile(string key)
+        {
+            if (Config.VoiceProfiles.Remove(key))
+            {
+                SaveConfig(Config);
+                return true;
+            }
+            return false;
         }
 
         public string GetAudioOutputPath(int questId)
@@ -183,9 +386,36 @@ namespace WowQuestTtsTool.Services
                 },
                 VoiceProfiles = new Dictionary<string, VoiceProfile>
                 {
-                    ["neutral_male"] = new() { VoiceId = "pNInz6obpgDQGcFmaJgB", Description = "Adam - Neutral männlich" },
-                    ["neutral_female"] = new() { VoiceId = "21m00Tcm4TlvDq8ikWAM", Description = "Rachel - Neutral weiblich" },
-                    ["epic_narrator"] = new() { VoiceId = "VR6AewLTigWG4xSOukaG", Description = "Arnold - Epischer Erzähler" }
+                    ["male_narrator"] = new()
+                    {
+                        Name = "Male Narrator",
+                        VoiceId = "ErXwobaYiN019PkySvjV",
+                        Provider = "ElevenLabs",
+                        Language = "de-DE",
+                        Description = "Antoni - Männlicher Erzähler",
+                        Gender = "male",
+                        Style = "narrator"
+                    },
+                    ["female_narrator"] = new()
+                    {
+                        Name = "Female Narrator",
+                        VoiceId = "EXAVITQu4vr4xnSDxMaL",
+                        Provider = "ElevenLabs",
+                        Language = "de-DE",
+                        Description = "Bella - Weibliche Erzählerin",
+                        Gender = "female",
+                        Style = "narrator"
+                    },
+                    ["epic_narrator"] = new()
+                    {
+                        Name = "Epic Narrator",
+                        VoiceId = "VR6AewLTigWG4xSOukaG",
+                        Provider = "ElevenLabs",
+                        Language = "de-DE",
+                        Description = "Arnold - Epischer Erzähler",
+                        Gender = "male",
+                        Style = "epic"
+                    }
                 }
             };
         }

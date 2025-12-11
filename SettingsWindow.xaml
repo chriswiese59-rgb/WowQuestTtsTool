@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Einstellungen"
         Width="550"
-        Height="620"
+        Height="656"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
     <Grid Margin="15">
@@ -90,6 +90,255 @@
                         <!-- Test Button -->
                         <Button Content="ElevenLabs Verbindung testen" Height="30"
                                 Click="TestElevenLabsConnection_Click" HorizontalAlignment="Left" Width="200"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Kosten-Tracking Tab -->
+            <TabItem Header="Kosten">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="Kosten- &amp; Token-Tracking"
+                                   FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
+
+                        <!-- Info Box -->
+                        <Border Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1"
+                                CornerRadius="4" Padding="10" Margin="0,0,0,15">
+                            <TextBlock TextWrapping="Wrap" FontSize="12">
+                                Diese Einstellungen werden für die Kostenschätzung vor Batch-Generierungen
+                                und das Session-Tracking verwendet. Passe die Werte an deinen API-Tarif an.
+                            </TextBlock>
+                        </Border>
+
+                        <!-- Zeichen pro Token -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="Ø Zeichen pro Token:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="AvgCharsPerTokenBox" Width="100" Height="28" Padding="8,5" Text="4.0"
+                                         TextChanged="CostParameter_TextChanged"/>
+                                <TextBlock Text="Standard: 4.0 (deutsch ~3.5, englisch ~4.5)"
+                                           Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Kosten pro 1000 Tokens -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="Kosten pro 1.000 Tokens:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="CostPer1kTokensBox" Width="100" Height="28" Padding="8,5" Text="0.30"
+                                         TextChanged="CostParameter_TextChanged"/>
+                                <TextBlock Text="z.B. 0.30 für ElevenLabs Standard"
+                                           Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Währungssymbol -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="Währungssymbol:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="CurrencySymbolBox" Width="60" Height="28" Padding="8,5" Text="€"
+                                         TextChanged="CostParameter_TextChanged"/>
+                                <TextBlock Text="z.B. €, $, CHF"
+                                           Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Beispielrechnung -->
+                        <GroupBox Header="Beispielrechnung" Padding="10" Margin="0,15,0,0">
+                            <StackPanel>
+                                <TextBlock x:Name="CostExampleText" TextWrapping="Wrap" FontSize="12">
+                                    10.000 Zeichen × 2 Stimmen = 20.000 effektive Zeichen
+                                    &#x0a;÷ 4.0 Zeichen/Token = 5.000 Tokens
+                                    &#x0a;× 0.30 € / 1.000 Tokens = 1,50 €
+                                </TextBlock>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Stimmen Tab -->
+            <TabItem Header="Stimmen">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="Stimmen-Konfiguration"
+                                   FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
+
+                        <!-- Info Box -->
+                        <Border Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1"
+                                CornerRadius="4" Padding="10" Margin="0,0,0,15">
+                            <TextBlock TextWrapping="Wrap" FontSize="12">
+                                Hier kannst du die Stimmen für die TTS-Generierung konfigurieren.
+                                Die Voice-IDs findest du in deinem ElevenLabs Dashboard unter "Voices".
+                            </TextBlock>
+                        </Border>
+
+                        <!-- Männliche Erzähler-Stimme -->
+                        <GroupBox Header="Männliche Erzähler-Stimme" Padding="10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Voice-ID:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <TextBox x:Name="MaleVoiceIdBox" Grid.Row="0" Grid.Column="1" Height="28" Padding="8,5" Margin="0,0,0,8"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Name:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <TextBox x:Name="MaleVoiceNameBox" Grid.Row="1" Grid.Column="1" Height="28" Padding="8,5" Margin="0,0,0,8"
+                                             Text="Male Narrator"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Beschreibung:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox x:Name="MaleVoiceDescBox" Grid.Row="2" Grid.Column="1" Height="28" Padding="8,5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Weibliche Erzähler-Stimme -->
+                        <GroupBox Header="Weibliche Erzähler-Stimme" Padding="10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Voice-ID:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <TextBox x:Name="FemaleVoiceIdBox" Grid.Row="0" Grid.Column="1" Height="28" Padding="8,5" Margin="0,0,0,8"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Name:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <TextBox x:Name="FemaleVoiceNameBox" Grid.Row="1" Grid.Column="1" Height="28" Padding="8,5" Margin="0,0,0,8"
+                                             Text="Female Narrator"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Beschreibung:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox x:Name="FemaleVoiceDescBox" Grid.Row="2" Grid.Column="1" Height="28" Padding="8,5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Vorschau / Test -->
+                        <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                            <Button Content="Männliche Stimme testen" Height="30" Width="160" Margin="0,0,10,0"
+                                    Click="TestMaleVoice_Click"/>
+                            <Button Content="Weibliche Stimme testen" Height="30" Width="160"
+                                    Click="TestFemaleVoice_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- LLM Tab -->
+            <TabItem Header="LLM (Text-KI)">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="LLM Text-Optimierung"
+                                   FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
+
+                        <!-- Info Box -->
+                        <Border Background="#F3E5F5" BorderBrush="#CE93D8" BorderThickness="1"
+                                CornerRadius="4" Padding="10" Margin="0,0,0,15">
+                            <TextBlock TextWrapping="Wrap" FontSize="12">
+                                Nutze KI-Modelle (ChatGPT, Claude, Gemini) um Quest-Texte in
+                                hoerbuchreife Erzaehlungen umzuwandeln. Die "Text glaetten"-Funktion
+                                im Hauptfenster verwendet diese Einstellungen.
+                            </TextBlock>
+                        </Border>
+
+                        <!-- Provider Auswahl -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="LLM-Provider:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="LlmProviderCombo" Height="28" SelectedIndex="0"
+                                      SelectionChanged="LlmProviderCombo_SelectionChanged">
+                                <ComboBoxItem Content="OpenAI (ChatGPT)" Tag="OpenAI"/>
+                                <ComboBoxItem Content="Anthropic (Claude)" Tag="Anthropic"/>
+                                <ComboBoxItem Content="Google (Gemini)" Tag="Google"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- API Key -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="API-Key:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="LlmApiKeyBox" Grid.Column="0" Height="28" Padding="8,5"
+                                             PasswordChanged="LlmApiKeyBox_PasswordChanged"/>
+                                <TextBox x:Name="LlmApiKeyTextBox" Grid.Column="0" Height="28" Padding="8,5"
+                                         Visibility="Collapsed" TextChanged="LlmApiKeyTextBox_TextChanged"/>
+                                <Button Grid.Column="1" Content="Zeigen" Width="60" Margin="5,0,0,0"
+                                        Click="ToggleLlmApiKeyVisibility"/>
+                            </Grid>
+                            <TextBlock x:Name="LlmApiKeyHint" Text="platform.openai.com → API Keys"
+                                       Foreground="Gray" FontSize="11" Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Model ID -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="Model-ID:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="LlmModelCombo" Height="28" IsEditable="True"/>
+                            <TextBlock Text="Kleinere Modelle sind guenstiger, groessere meist besser"
+                                       Foreground="Gray" FontSize="11" Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Erweiterte Einstellungen -->
+                        <Expander Header="Erweiterte Einstellungen" Margin="0,5,0,12">
+                            <StackPanel Margin="0,10,0,0">
+                                <!-- Temperature -->
+                                <StackPanel Margin="0,0,0,12">
+                                    <TextBlock Text="Temperatur (Kreativitaet):" Margin="0,0,0,3"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Slider x:Name="LlmTemperatureSlider" Width="200" Minimum="0" Maximum="1"
+                                                Value="0.7" TickFrequency="0.1" IsSnapToTickEnabled="True"/>
+                                        <TextBlock Text="{Binding ElementName=LlmTemperatureSlider, Path=Value, StringFormat={}{0:F1}}"
+                                                   Margin="10,0,0,0" Width="25" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="0.0 = deterministisch, 1.0 = sehr kreativ"
+                                               Foreground="Gray" FontSize="11" Margin="0,3,0,0"/>
+                                </StackPanel>
+
+                                <!-- Max Tokens -->
+                                <StackPanel Margin="0,0,0,12">
+                                    <TextBlock Text="Max. Output-Tokens:" Margin="0,0,0,3"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBox x:Name="LlmMaxTokensBox" Width="100" Height="28" Padding="8,5" Text="1024"/>
+                                        <TextBlock Text="Maximale Laenge der Antwort"
+                                                   Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Auto-Enhance -->
+                                <CheckBox x:Name="LlmAutoEnhanceCheckBox" Margin="0,0,0,12"
+                                          Content="Automatisch bei TTS-Generierung optimieren"
+                                          ToolTip="Wenn aktiviert, wird der Text vor jeder TTS-Generierung automatisch optimiert"/>
+
+                                <!-- Custom System Prompt -->
+                                <StackPanel Margin="0,0,0,8">
+                                    <TextBlock Text="Benutzerdefinierter System-Prompt (optional):" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="LlmSystemPromptBox" Height="80" TextWrapping="Wrap"
+                                             AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                             Padding="8,5"/>
+                                    <TextBlock Text="Leer lassen fuer Standard-Hoerbuch-Prompt"
+                                               Foreground="Gray" FontSize="11" Margin="0,3,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- Test Button -->
+                        <Button Content="LLM Verbindung testen" Height="30"
+                                Click="TestLlmConnection_Click" HorizontalAlignment="Left" Width="200"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

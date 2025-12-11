@@ -43,11 +43,11 @@ namespace WowQuestTtsTool.Services
 
             var requestBody = new
             {
-                text = text,
+                text,
                 model_id = modelId,
                 voice_settings = new
                 {
-                    stability = stability,
+                    stability,
                     similarity_boost = similarityBoost,
                     style = 0.0,
                     use_speaker_boost = true
@@ -120,6 +120,7 @@ namespace WowQuestTtsTool.Services
         public void Dispose()
         {
             _httpClient?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }

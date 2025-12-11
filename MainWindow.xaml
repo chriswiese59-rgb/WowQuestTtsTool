@@ -7,9 +7,24 @@
         Width="1200"
         Height="800"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <!-- Fix fuer WPF Binding-Fehler bei ComboBoxItem ContentAlignment -->
+        <!-- Verhindert RelativeSource FindAncestor Fehler indem ItemContainerStyle gesetzt wird -->
+        <Style x:Key="ComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ComboBoxItemStyle}"/>
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <!-- Oben: Toolbar -->
+            <RowDefinition Height="Auto"/>
+            <!-- NEU: Zone-/Gebiets-Ladebereich -->
             <RowDefinition Height="Auto"/>
             <!-- TTS-Export Einstellungen -->
             <RowDefinition Height="Auto"/>
@@ -19,7 +34,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Obere Leiste -->
+        <!-- ==================== OBERE LEISTE (Zeile 0) ==================== -->
         <StackPanel Grid.Row="0" Margin="8">
             <!-- Zeile 1: Laden, Suche, Export -->
             <DockPanel Margin="0,0,0,4">
@@ -59,6 +74,20 @@
                         Click="OnSettingsClick"
                         Background="#2196F3"
                         Foreground="White"/>
+
+                <!-- NEU: Progress Button -->
+                <Button x:Name="ProgressButton"
+                        Content="Fortschritt"
+                        Width="90"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnShowProgressClick"
+                        Background="#673AB7"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Zeigt den Vertonungs-Fortschritt pro Zone/Gebiet an"/>
+
                 <!-- Export Button -->
                 <Button Content="Batch-Export"
                         Width="90"
@@ -72,6 +101,65 @@
                         DockPanel.Dock="Right"
                         Margin="8,0,0,0"
                         Click="OnExportFilteredClick"/>
+                <!-- CSV Import -->
+                <Button Content="CSV Import"
+                        Width="90"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnCsvImportClick"
+                        Background="#FF9800"
+                        Foreground="White"
+                        ToolTip="Quest-Texte (Objectives, Completion) aus CSV-Datei importieren"/>
+                <!-- Projekt speichern -->
+                <Button Content="Speichern"
+                        Width="90"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnSaveProjectClick"
+                        Background="#4CAF50"
+                        Foreground="White"
+                        ToolTip="Projekt manuell speichern (wird auch automatisch beim Schliessen gespeichert)"/>
+
+                <!-- Addon Export -->
+                <Button x:Name="AddonExportButton"
+                        Content="Addon Export"
+                        Width="100"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnAddonExportClick"
+                        Background="#E91E63"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Exportiert alle Audio-Dateien als WoW-Addon"/>
+
+                <!-- Update & Sync -->
+                <Button x:Name="UpdateSyncButton"
+                        Content="Update &amp; Sync"
+                        Width="110"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnUpdateSyncClick"
+                        Background="#009688"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Erkennt neue/geaenderte Quests und vertont diese selektiv"/>
+
+                <!-- End-to-End Test -->
+                <Button x:Name="EndToEndTestButton"
+                        Content="E2E Test"
+                        Width="80"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnEndToEndTestClick"
+                        Background="#FF5722"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Testet die komplette Pipeline: Quest -> TTS -> Audio -> Addon"/>
 
                 <TextBlock/>
             </DockPanel>
@@ -92,8 +180,9 @@
                           Width="120"
                           Margin="0,0,12,0"
                           VerticalAlignment="Center"
+                          SelectedIndex="0"
                           SelectionChanged="CategoryFilterComboBox_SelectionChanged">
-                    <ComboBoxItem Content="Alle Kategorien" Tag="all"/>
+                    <ComboBoxItem Content="Alle Kategorien" Tag="all" IsSelected="True"/>
                 </ComboBox>
 
                 <!-- Gruppenquest Filter -->
@@ -109,30 +198,53 @@
                     <ComboBoxItem Content="Nein" Tag="false"/>
                 </ComboBox>
 
+                <!-- Lokalisierungs-Filter -->
+                <TextBlock Text="Sprache:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="LocalizationFilterComboBox"
+                          Width="100"
+                          Margin="0,0,12,0"
+                          VerticalAlignment="Center"
+                          SelectedIndex="0"
+                          SelectionChanged="LocalizationFilterComboBox_SelectionChanged"
+                          ToolTip="Filtert nach Lokalisierungsstatus (DE/EN)">
+                    <ComboBoxItem Content="Alle" Tag="all"/>
+                    <ComboBoxItem Content="Nur DE" Tag="fully_german"/>
+                    <ComboBoxItem Content="DE/EN" Tag="mixed"/>
+                    <ComboBoxItem Content="Nur EN" Tag="only_english"/>
+                    <ComboBoxItem Content="Unvollst." Tag="incomplete"/>
+                    <ComboBoxItem Content="Nicht leer" Tag="not_incomplete"/>
+                </ComboBox>
+
                 <!-- TTS-Status Filter -->
                 <TextBlock Text="TTS:" VerticalAlignment="Center" Margin="0,0,4,0"/>
                 <ComboBox x:Name="TtsStatusFilterComboBox"
-                          Width="100"
+                          Width="130"
                           Margin="0,0,12,0"
                           VerticalAlignment="Center"
                           SelectedIndex="0"
                           SelectionChanged="TtsStatusFilterComboBox_SelectionChanged">
                     <ComboBoxItem Content="Alle" Tag="all"/>
-                    <ComboBoxItem Content="Mit TTS" Tag="with"/>
+                    <ComboBoxItem Content="Komplett" Tag="complete"/>
                     <ComboBoxItem Content="Ohne TTS" Tag="without"/>
+                    <ComboBoxItem Content="Ohne M" Tag="without_male"/>
+                    <ComboBoxItem Content="Ohne W" Tag="without_female"/>
+                    <ComboBoxItem Content="Unvollstaendig" Tag="incomplete"/>
+                    <ComboBoxItem Content="Ungeprueft" Tag="not_reviewed"/>
+                    <ComboBoxItem Content="Geprueft" Tag="reviewed"/>
+                    <ComboBoxItem Content="Mit Fehlern" Tag="with_errors"/>
                 </ComboBox>
 
                 <!-- Filter Presets -->
                 <TextBlock Text="|" VerticalAlignment="Center" Margin="4,0,8,0" Foreground="Gray"/>
                 <TextBlock Text="Presets:" VerticalAlignment="Center" Margin="0,0,4,0" FontWeight="SemiBold"/>
-                <Button Content="Main ⊘TTS"
+                <Button Content="Main -TTS"
                         Height="22"
                         Padding="6,0"
                         Margin="0,0,4,0"
                         Tag="main_no_tts"
                         Click="OnFilterPresetClick"
                         ToolTip="Hauptstory-Quests ohne TTS"/>
-                <Button Content="Side ⊘TTS"
+                <Button Content="Side -TTS"
                         Height="22"
                         Padding="6,0"
                         Margin="0,0,4,0"
@@ -146,7 +258,7 @@
                         Tag="group_quests"
                         Click="OnFilterPresetClick"
                         ToolTip="Alle Gruppenquests"/>
-                <Button Content="⊘TTS"
+                <Button Content="-TTS"
                         Height="22"
                         Padding="6,0"
                         Margin="0,0,4,0"
@@ -156,17 +268,123 @@
                 <Button Content="Reset"
                         Height="22"
                         Padding="6,0"
-                        Margin="0,0,0,0"
+                        Margin="0,0,8,0"
                         Tag="reset"
                         Click="OnFilterPresetClick"
                         Background="#F44336"
                         Foreground="White"
-                        ToolTip="Alle Filter zurücksetzen"/>
+                        ToolTip="Alle Filter zuruecksetzen"/>
+                <Button x:Name="RetryErrorsButton"
+                        Content="Fehler retry"
+                        Height="22"
+                        Padding="6,0"
+                        Margin="0,0,8,0"
+                        Click="OnRetryErrorsClick"
+                        Background="#FF9800"
+                        Foreground="White"
+                        ToolTip="TTS fuer alle Quests mit Fehlern erneut versuchen"/>
+
+                <!-- Sortierung -->
+                <TextBlock Text="Sortierung:" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                <ComboBox x:Name="SortModeComboBox"
+                          Width="150"
+                          Height="22"
+                          SelectionChanged="SortModeComboBox_SelectionChanged"
+                          ToolTip="Sortierreihenfolge der Quests">
+                    <ComboBoxItem Content="Standard (Main/Zone/ID)" Tag="standard" IsSelected="True"/>
+                    <ComboBoxItem Content="Nur Quest-ID" Tag="id_only"/>
+                    <ComboBoxItem Content="Zone + ID" Tag="zone_id"/>
+                    <ComboBoxItem Content="Kategorie + ID" Tag="category_id"/>
+                    <ComboBoxItem Content="Lokalisierung + ID" Tag="localization_id"/>
+                </ComboBox>
+
+                <!-- Auto-Klassifizierung Button -->
+                <Button x:Name="AutoClassifyButton"
+                        Content="Auto-Klassifizieren"
+                        Height="22"
+                        Padding="6,0"
+                        Margin="8,0,0,0"
+                        Click="OnAutoClassifyClick"
+                        Background="#9C27B0"
+                        Foreground="White"
+                        ToolTip="Klassifiziert alle Quests automatisch (Main/Side/Group)"/>
             </WrapPanel>
         </StackPanel>
 
-        <!-- TTS-Export Einstellungen -->
-        <Border Grid.Row="1" Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1" Margin="8,0,8,8" Padding="8" CornerRadius="4">
+        <!-- ==================== NEU: ZONE-LADEBEREICH (Zeile 1) ==================== -->
+        <Border Grid.Row="1" Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="1"
+                Margin="8,0,8,4" Padding="8" CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Zone-Auswahl -->
+                <TextBlock Grid.Column="0" Text="Zone laden:" VerticalAlignment="Center"
+                           FontWeight="SemiBold" Margin="0,0,8,0"/>
+                <ComboBox x:Name="ZoneLoadComboBox"
+                          Grid.Column="1"
+                          VerticalAlignment="Center"
+                          ToolTip="Waehle eine Zone/Gebiet zum Laden der Quests"/>
+
+                <!-- Filter: Nur Hauptquests -->
+                <CheckBox x:Name="LoadOnlyMainQuestsCheckBox"
+                          Grid.Column="2"
+                          Content="Nur Hauptquests"
+                          VerticalAlignment="Center"
+                          Margin="16,0,0,0"
+                          ToolTip="Laedt nur Quests die als Hauptstory markiert sind"/>
+
+                <!-- Filter: Nur Gruppenquests -->
+                <CheckBox x:Name="LoadOnlyGroupQuestsCheckBox"
+                          Grid.Column="3"
+                          Content="Nur Gruppenquests"
+                          VerticalAlignment="Center"
+                          Margin="12,0,0,0"
+                          ToolTip="Laedt nur Quests die eine Gruppe erfordern"/>
+
+                <!-- Filter: Nur ohne TTS -->
+                <CheckBox x:Name="LoadOnlyWithoutTtsCheckBox"
+                          Grid.Column="4"
+                          Content="Nur ohne TTS"
+                          VerticalAlignment="Center"
+                          Margin="12,0,0,0"
+                          ToolTip="Laedt nur Quests die noch nicht vertont wurden"/>
+
+                <!-- Max Anzahl -->
+                <TextBlock Grid.Column="5" Text="Max:" VerticalAlignment="Center" Margin="16,0,4,0"/>
+                <TextBox x:Name="MaxQuestsTextBox"
+                         Grid.Column="6"
+                         Width="50"
+                         VerticalAlignment="Center"
+                         Text="500"
+                         ToolTip="Maximale Anzahl zu ladender Quests (0 = unbegrenzt)"/>
+
+                <!-- Laden Button -->
+                <Button x:Name="LoadZoneQuestsButton"
+                        Grid.Column="8"
+                        Content="Quests laden"
+                        Width="100"
+                        Height="26"
+                        Click="OnLoadZoneQuestsClick"
+                        Background="#4CAF50"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Laedt Quests aus der ausgewaehlten Zone mit den angegebenen Filtern"/>
+            </Grid>
+        </Border>
+
+        <!-- ==================== TTS-EXPORT EINSTELLUNGEN (Zeile 2) ==================== -->
+        <Border Grid.Row="2" Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1"
+                Margin="8,0,8,4" Padding="8" CornerRadius="4">
             <StackPanel>
                 <!-- Zeile 1: Ausgabeordner und Sprache -->
                 <Grid Margin="0,0,0,4">
@@ -179,18 +397,27 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" Text="Ausgabeordner:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="0" Text="Ausgabeordner:" VerticalAlignment="Center"
+                               FontWeight="SemiBold" Margin="0,0,8,0"/>
                     <TextBox x:Name="OutputPathTextBox"
                              Grid.Column="1"
                              VerticalAlignment="Center"
                              IsReadOnly="True"
                              Background="#FAFAFA"
                              Padding="4,2"/>
-                    <Button Grid.Column="2"
-                            Content="Ordner wählen..."
-                            Width="100"
-                            Margin="8,0,0,0"
-                            Click="OnSelectOutputFolderClick"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="Ordner waehlen..."
+                                Width="100"
+                                Margin="8,0,4,0"
+                                Click="OnSelectOutputFolderClick"/>
+                        <Button x:Name="OpenOutputFolderButton"
+                                Content="Oeffnen"
+                                Width="65"
+                                Click="OnOpenOutputFolderClick"
+                                Background="#607D8B"
+                                Foreground="White"
+                                ToolTip="Ausgabeordner im Explorer oeffnen"/>
+                    </StackPanel>
 
                     <TextBlock Grid.Column="3" Text="Sprache:" VerticalAlignment="Center" Margin="16,0,8,0"/>
                     <ComboBox x:Name="LanguageCodeComboBox"
@@ -204,10 +431,11 @@
                         <ComboBoxItem Content="esES" Tag="esES"/>
                     </ComboBox>
 
-                    <TextBlock Grid.Column="5" x:Name="TtsProviderText" Text="TTS: Dummy" VerticalAlignment="Center" Margin="16,0,0,0" Foreground="Gray"/>
+                    <TextBlock Grid.Column="5" x:Name="TtsProviderText" Text="TTS: Dummy"
+                               VerticalAlignment="Center" Margin="16,0,0,0" Foreground="Gray"/>
                 </Grid>
 
-                <!-- Zeile 2: Voice-IDs für männlich/weiblich -->
+                <!-- Zeile 2: Voice-IDs fuer maennlich/weiblich -->
                 <Grid Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -218,21 +446,30 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" Text="Männl. Voice-ID:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="0" Text="Maennl. Voice-ID:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <TextBox x:Name="MaleVoiceIdTextBox"
                              Grid.Column="1"
                              VerticalAlignment="Center"
                              Text="{Binding Source={x:Static services:TtsExportSettings.Instance}, Path=MaleVoiceId, Mode=TwoWay}"
-                             ToolTip="ElevenLabs Voice-ID für männliche Erzähler-Stimme"/>
+                             ToolTip="ElevenLabs Voice-ID fuer maennliche Erzaehler-Stimme"/>
 
                     <TextBlock Grid.Column="2" Text="Weibl. Voice-ID:" VerticalAlignment="Center" Margin="16,0,8,0"/>
                     <TextBox x:Name="FemaleVoiceIdTextBox"
                              Grid.Column="3"
                              VerticalAlignment="Center"
                              Text="{Binding Source={x:Static services:TtsExportSettings.Instance}, Path=FemaleVoiceId, Mode=TwoWay}"
-                             ToolTip="ElevenLabs Voice-ID für weibliche Erzähler-Stimme"/>
+                             ToolTip="ElevenLabs Voice-ID fuer weibliche Erzaehler-Stimme"/>
 
-                    <!-- Batch-Button für beide Stimmen -->
+                    <!-- Skip-Logik CheckBox -->
+                    <CheckBox x:Name="ForceReTtsCheckBox"
+                              Grid.Column="4"
+                              Content="Bereits vertonte neu generieren"
+                              IsChecked="{Binding ForceReTtsExisting, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              Margin="8,0,8,0"
+                              ToolTip="Wenn aktiviert: Auch bereits vertonte Quests werden im Batch neu generiert (ueberschrieben).&#x0a;Wenn deaktiviert: Bereits vertonte Quests werden uebersprungen (Token sparen)."/>
+
+                    <!-- Batch-Button fuer beide Stimmen -->
                     <Button x:Name="BatchDualTtsButton"
                             Grid.Column="5"
                             Content="Alle TTS (M+W) generieren"
@@ -242,13 +479,105 @@
                             Background="#673AB7"
                             Foreground="White"
                             FontWeight="SemiBold"
-                            ToolTip="Generiert TTS für alle gefilterten Quests in beiden Stimmen (männlich + weiblich)"/>
+                            ToolTip="Generiert TTS fuer alle gefilterten Quests in beiden Stimmen (maennlich + weiblich)"/>
                 </Grid>
+
+                <!-- Zeile 3: AzerothCore MySQL-Datenbank Import -->
+                <Expander Header="AzerothCore Datenbank (MySQL)" Margin="0,8,0,0" IsExpanded="False">
+                    <Border Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="1"
+                            Padding="8" Margin="0,4,0,0" CornerRadius="4">
+                        <StackPanel>
+                            <!-- DB-Verbindung Zeile 1: Host, Port, Datenbank -->
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="50"/>
+                                    <ColumnDefinition Width="60"/>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="Host:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding QuestDbConfig.Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalAlignment="Center"
+                                         ToolTip="MySQL-Server Adresse (z.B. 127.0.0.1 oder localhost)"/>
+
+                                <TextBlock Grid.Column="2" Text="Port:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <TextBox Grid.Column="3"
+                                         Text="{Binding QuestDbConfig.Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalAlignment="Center"
+                                         ToolTip="MySQL-Port (Standard: 3306)"/>
+
+                                <TextBlock Grid.Column="4" Text="Datenbank:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <TextBox Grid.Column="5"
+                                         Text="{Binding QuestDbConfig.Database, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalAlignment="Center"
+                                         ToolTip="Datenbankname (Standard: wow_world)"/>
+                            </Grid>
+
+                            <!-- DB-Verbindung Zeile 2: Benutzer, Passwort, Buttons -->
+                            <Grid Margin="0,0,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="Benutzer:" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding QuestDbConfig.User, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalAlignment="Center"
+                                         ToolTip="MySQL-Benutzername"/>
+
+                                <TextBlock Grid.Column="2" Text="Passwort:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <PasswordBox x:Name="DbPasswordBox"
+                                             Grid.Column="3"
+                                             VerticalAlignment="Center"
+                                             ToolTip="MySQL-Passwort (wird nicht gespeichert)"/>
+
+                                <Button Grid.Column="5"
+                                        Content="Verbindung testen"
+                                        Width="120"
+                                        Height="24"
+                                        Margin="8,0,0,0"
+                                        Click="OnTestDbConnectionClick"
+                                        Background="#2196F3"
+                                        Foreground="White"
+                                        ToolTip="Testet die Verbindung zur MySQL-Datenbank"/>
+
+                                <Button Grid.Column="6"
+                                        Content="Texte importieren"
+                                        Width="120"
+                                        Height="24"
+                                        Margin="8,0,0,0"
+                                        Click="OnImportQuestTextsClick"
+                                        Background="#4CAF50"
+                                        Foreground="White"
+                                        FontWeight="SemiBold"
+                                        ToolTip="Importiert Objectives und Completion aus der AzerothCore-DB"/>
+                            </Grid>
+
+                            <!-- Hinweistext -->
+                            <TextBlock Text="Importiert Quest-Ziele (Objectives) und Abschlusstexte (Completion) aus der lokalen AzerothCore wow_world Datenbank."
+                                       Foreground="Gray"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Expander>
             </StackPanel>
         </Border>
 
-        <!-- Hauptbereich -->
-        <Grid Grid.Row="2" Margin="8">
+        <!-- ==================== HAUPTBEREICH (Zeile 3) ==================== -->
+        <Grid Grid.Row="3" Margin="8">
             <Grid.ColumnDefinitions>
                 <!-- Questliste -->
                 <ColumnDefinition Width="3*"/>
@@ -262,17 +591,50 @@
                       ItemsSource="{Binding FilteredQuests}"
                       SelectedItem="{Binding SelectedQuest, Mode=TwoWay}"
                       AutoGenerateColumns="False"
-                      IsReadOnly="True"
+                      IsReadOnly="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
                       Margin="0,0,8,0"
                       SelectionMode="Single">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="ID" Binding="{Binding QuestId}" Width="50" />
-                    <DataGridTextColumn Header="Kat" Binding="{Binding CategoryShortName}" Width="40" />
-                    <DataGridTextColumn Header="Titel" Binding="{Binding Title}" Width="2*" />
-                    <DataGridTextColumn Header="Zone" Binding="{Binding Zone}" Width="1*" />
-                    <DataGridCheckBoxColumn Header="Grp" Binding="{Binding IsGroupQuest}" Width="35" />
-                    <DataGridCheckBoxColumn Header="M" Binding="{Binding HasMaleTts}" Width="28" />
-                    <DataGridCheckBoxColumn Header="W" Binding="{Binding HasFemaleTts}" Width="28" />
+                    <!-- QuestId: SortMemberPath stellt sicher dass numerisch sortiert wird -->
+                    <DataGridTextColumn Header="ID" Binding="{Binding QuestId}" Width="50" IsReadOnly="True"
+                                        SortMemberPath="QuestId"/>
+                    <DataGridCheckBoxColumn Header="Main" Binding="{Binding IsMainStory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="40" ToolTipService.ToolTip="Hauptstory-Quest"/>
+                    <DataGridTextColumn Header="Kat" Binding="{Binding CategoryShortName}" Width="40" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Spr" Binding="{Binding LocalizationStatusShortName}" Width="40" IsReadOnly="True"
+                                        ToolTipService.ToolTip="Lokalisierungsstatus: DE=Voll Deutsch, DE/EN=Gemischt, EN=Nur Englisch, ?=Unvollstaendig"/>
+                    <DataGridTextColumn Header="Titel" Binding="{Binding Title}" Width="2*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Zone" Binding="{Binding Zone}" Width="1*" IsReadOnly="True"/>
+                    <DataGridCheckBoxColumn Header="Grp" Binding="{Binding IsGroupQuest, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="35" ToolTipService.ToolTip="Gruppenquest"/>
+                    <DataGridCheckBoxColumn Header="M" Binding="{Binding HasMaleTts}" Width="28" IsReadOnly="True"/>
+                    <DataGridCheckBoxColumn Header="W" Binding="{Binding HasFemaleTts}" Width="28" IsReadOnly="True"/>
+                    <DataGridCheckBoxColumn Header="OK" Binding="{Binding TtsReviewed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="28" ToolTipService.ToolTip="TTS geprueft"/>
+                    <DataGridCheckBoxColumn Header="Err" Binding="{Binding HasTtsError, Mode=OneWay}" Width="30" IsReadOnly="True"/>
+
+                    <!-- Audio-Preview Spalte mit Play-Buttons -->
+                    <DataGridTemplateColumn Header="Audio" Width="70">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Button Content="M" Width="24" Height="20" FontSize="10"
+                                            Click="OnGridPlayMaleClick"
+                                            Background="#2196F3" Foreground="White"
+                                            ToolTip="Maennliche Stimme abspielen"
+                                            IsEnabled="{Binding HasMaleTts}"
+                                            Margin="0,0,2,0"/>
+                                    <Button Content="W" Width="24" Height="20" FontSize="10"
+                                            Click="OnGridPlayFemaleClick"
+                                            Background="#E91E63" Foreground="White"
+                                            ToolTip="Weibliche Stimme abspielen"
+                                            IsEnabled="{Binding HasFemaleTts}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -302,23 +664,139 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Beschreibung / Text -->
-                <GroupBox Grid.Row="1" Header="Beschreibung / Text" Margin="0,0,0,8">
+                <!-- Quest-Texte EDITIERBAR -->
+                <GroupBox Grid.Row="1" Header="Quest-Texte (editierbar)" Margin="0,0,0,8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="4">
-                            <TextBlock Text="Beschreibung:" FontWeight="Bold" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedQuest.Description}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,12"/>
+                            <!-- Titel -->
+                            <TextBlock Text="Titel:" FontWeight="Bold" Margin="0,0,0,2"/>
+                            <TextBox x:Name="TitleTextBox"
+                                     Text="{Binding SelectedQuest.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap"
+                                     Margin="0,0,0,8"
+                                     Background="#FFFFF0"/>
 
-                            <TextBlock Text="Ziele:" FontWeight="Bold" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedQuest.Objectives}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,12"/>
+                            <!-- Beschreibung -->
+                            <TextBlock Text="Beschreibung:" FontWeight="Bold" Margin="0,0,0,2"/>
+                            <TextBox x:Name="DescriptionTextBox"
+                                     Text="{Binding SelectedQuest.Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     MinHeight="60"
+                                     MaxHeight="120"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Margin="0,0,0,8"
+                                     Background="#FFFFF8"/>
 
-                            <TextBlock Text="Abschluss:" FontWeight="Bold" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedQuest.Completion}"
-                                       TextWrapping="Wrap"/>
+                            <!-- Ziele (Objectives) -->
+                            <TextBlock Text="Ziele (Objectives):" FontWeight="Bold" Margin="0,0,0,2"/>
+                            <TextBox x:Name="ObjectivesTextBox"
+                                     Text="{Binding SelectedQuest.Objectives, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     MinHeight="40"
+                                     MaxHeight="80"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Foreground="#006400"
+                                     Margin="0,0,0,8"
+                                     Background="#F0FFF0"/>
+
+                            <!-- Abschlusstext (Completion) -->
+                            <TextBlock Text="Abschlusstext (Completion):" FontWeight="Bold" Margin="0,0,0,2"/>
+                            <TextBox x:Name="CompletionTextBox"
+                                     Text="{Binding SelectedQuest.Completion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     MinHeight="40"
+                                     MaxHeight="80"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Foreground="#8B4513"
+                                     Margin="0,0,0,8"
+                                     Background="#FFF8F0"/>
+
+                            <!-- Speichern-Button fuer Overrides -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
+                                <Button x:Name="SaveOverridesButton"
+                                        Content="Aenderungen speichern"
+                                        Width="160"
+                                        Height="28"
+                                        Margin="0,0,8,0"
+                                        Click="OnSaveOverridesClick"
+                                        Background="#4CAF50"
+                                        Foreground="White"
+                                        FontWeight="SemiBold"
+                                        ToolTip="Speichert alle Text-Aenderungen in quest_overrides.json"/>
+                                <Button x:Name="ResetOverrideButton"
+                                        Content="Override loeschen"
+                                        Width="120"
+                                        Height="28"
+                                        Margin="0,0,8,0"
+                                        Click="OnResetOverrideClick"
+                                        ToolTip="Entfernt den Override fuer diese Quest (Original wird wiederhergestellt)"/>
+                            </StackPanel>
+
+                            <!-- Text-KI Bereich mit Modus-Auswahl -->
+                            <Border Background="#F3E5F5" BorderBrush="#CE93D8" BorderThickness="1"
+                                    CornerRadius="4" Padding="8" Margin="0,4,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="Text-KI (Hoerbuch-Optimierung)" FontWeight="Bold" Margin="0,0,0,6"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="Modus:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <RadioButton x:Name="TextKiApiModeRadio"
+                                                     Content="API (automatisch)"
+                                                     GroupName="TextKiMode"
+                                                     IsChecked="True"
+                                                     Margin="0,0,16,0"
+                                                     ToolTip="Ruft die Text-API direkt auf (kostet Tokens)"/>
+                                        <RadioButton x:Name="TextKiManualModeRadio"
+                                                     Content="Manuell (Browser-Premium)"
+                                                     GroupName="TextKiMode"
+                                                     Margin="0,0,16,0"
+                                                     ToolTip="Kopiert Prompt zum manuellen Einfuegen in ChatGPT+/Gemini/Claude"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="EnhanceTextButton"
+                                                Content="Text glaetten (LLM)"
+                                                Width="140"
+                                                Height="28"
+                                                Click="OnEnhanceTextClick"
+                                                Background="#9C27B0"
+                                                Foreground="White"
+                                                FontWeight="SemiBold"
+                                                ToolTip="Wandelt den Quest-Text in hoerbuchreife Sprache um"/>
+                                        <TextBlock x:Name="TextKiProviderText"
+                                                   Text=""
+                                                   VerticalAlignment="Center"
+                                                   Margin="12,0,0,0"
+                                                   Foreground="Gray"
+                                                   FontSize="11"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- TTS-Vorschau -->
+                            <Separator Margin="0,4,0,8"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="TTS-Vorschau:" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SelectedQuest.HasCustomTtsText, Converter={x:Null}, FallbackValue=''}"
+                                           Foreground="Orange" Margin="8,0,0,0"
+                                           x:Name="CustomTtsIndicator"/>
+                            </StackPanel>
+                            <Border BorderBrush="#CCCCCC" BorderThickness="1" Background="#F9F9F9"
+                                    Padding="8" CornerRadius="4">
+                                <TextBlock x:Name="TtsPreviewText"
+                                           Text="{Binding SelectedQuest.TtsText}"
+                                           TextWrapping="Wrap"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           Foreground="#444444"/>
+                            </Border>
+                            <TextBlock x:Name="TtsCharCountText"
+                                       Text=""
+                                       Foreground="Gray"
+                                       FontSize="10"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="Right"/>
                         </StackPanel>
                     </ScrollViewer>
                 </GroupBox>
@@ -329,18 +807,28 @@
                                FontWeight="Bold"
                                Margin="0,0,0,4" />
 
+                    <!-- Stimmprofil-Auswahl mit Feintuning -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                        <TextBlock Text="Voice-Profil:" VerticalAlignment="Center"/>
+                        <TextBlock Text="Stimmprofil:" VerticalAlignment="Center"/>
                         <ComboBox x:Name="VoiceProfileComboBox"
-                                  Width="180"
-                                  Margin="4,0,16,0"
-                                  SelectedIndex="0">
-                            <ComboBoxItem Content="neutral_male" Tag="Neutral männlich"/>
-                            <ComboBoxItem Content="neutral_female" Tag="Neutral weiblich"/>
-                            <ComboBoxItem Content="epic_narrator" Tag="Erzähler episch"/>
+                                  Width="200"
+                                  Margin="4,0,8,0"
+                                  SelectionChanged="OnVoiceProfileSelectionChanged"
+                                  ToolTip="Waehle ein vorkonfiguriertes Stimmprofil">
+                            <!-- Wird dynamisch aus TtsConfig befuellt -->
                         </ComboBox>
+                        <TextBlock x:Name="VoiceProfileInfoText"
+                                   Text=""
+                                   Foreground="Gray"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,16,0"/>
+                    </StackPanel>
 
-                        <TextBlock Text="Stabilität:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <!-- TTS-Feintuning Slider -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="Stabilitaet:" VerticalAlignment="Center" Width="70"
+                                   ToolTip="0 = expressiv/variabel, 1 = stabil/konsistent"/>
                         <Slider x:Name="StabilitySlider"
                                 Minimum="0"
                                 Maximum="1"
@@ -351,7 +839,83 @@
                                 IsSnapToTickEnabled="True"/>
                         <TextBlock Text="{Binding ElementName=StabilitySlider, Path=Value, StringFormat={}{0:F1}}"
                                    VerticalAlignment="Center" Width="25"/>
+
+                        <TextBlock Text="Aehnlichkeit:" VerticalAlignment="Center" Margin="16,0,0,0" Width="70"
+                                   ToolTip="Wie stark die Stimme dem Originalmodell entspricht"/>
+                        <Slider x:Name="SimilaritySlider"
+                                Minimum="0"
+                                Maximum="1"
+                                Value="0.75"
+                                Width="100"
+                                Margin="4,0,4,0"
+                                TickFrequency="0.1"
+                                IsSnapToTickEnabled="True"/>
+                        <TextBlock Text="{Binding ElementName=SimilaritySlider, Path=Value, StringFormat={}{0:F1}}"
+                                   VerticalAlignment="Center" Width="25"/>
                     </StackPanel>
+
+                    <!-- Erweiterte TTS-Optionen (ausklappbar) -->
+                    <Expander Header="Erweiterte Stimm-Optionen" IsExpanded="False" Margin="0,0,0,4">
+                        <StackPanel Margin="20,8,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Stil-Intensitaet:" VerticalAlignment="Center" Width="100"
+                                           ToolTip="Wie stark der Stil der Stimme zum Ausdruck kommt"/>
+                                <Slider x:Name="StyleIntensitySlider"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        Value="0.0"
+                                        Width="100"
+                                        Margin="4,0,4,0"
+                                        TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"/>
+                                <TextBlock Text="{Binding ElementName=StyleIntensitySlider, Path=Value, StringFormat={}{0:F1}}"
+                                           VerticalAlignment="Center" Width="25"/>
+
+                                <CheckBox x:Name="SpeakerBoostCheckBox"
+                                          Content="Speaker Boost"
+                                          IsChecked="True"
+                                          VerticalAlignment="Center"
+                                          Margin="16,0,0,0"
+                                          ToolTip="Verbessert die Stimmklarheit"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="Tempo:" VerticalAlignment="Center" Width="100"
+                                           ToolTip="0.5 = langsam, 1.0 = normal, 1.5 = schnell"/>
+                                <Slider x:Name="SpeedSlider"
+                                        Minimum="0.5"
+                                        Maximum="1.5"
+                                        Value="1.0"
+                                        Width="100"
+                                        Margin="4,0,4,0"
+                                        TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"/>
+                                <TextBlock Text="{Binding ElementName=SpeedSlider, Path=Value, StringFormat={}{0:F1}x}"
+                                           VerticalAlignment="Center" Width="30"/>
+
+                                <TextBlock Text="Pausen:" VerticalAlignment="Center" Margin="16,0,0,0" Width="50"
+                                           ToolTip="Pausen-Multiplikator fuer Satzenden"/>
+                                <Slider x:Name="PauseSlider"
+                                        Minimum="0.5"
+                                        Maximum="2.0"
+                                        Value="1.0"
+                                        Width="100"
+                                        Margin="4,0,4,0"
+                                        TickFrequency="0.1"
+                                        IsSnapToTickEnabled="True"/>
+                                <TextBlock Text="{Binding ElementName=PauseSlider, Path=Value, StringFormat={}{0:F1}x}"
+                                           VerticalAlignment="Center" Width="30"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox x:Name="AddBreathPausesCheckBox"
+                                          Content="Atempausen einfuegen"
+                                          IsChecked="False"
+                                          VerticalAlignment="Center"
+                                          ToolTip="Fuegt natuerliche Atempausen nach Punkten und Kommas ein"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Expander>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <CheckBox x:Name="IncludeTitleCheckBox"
@@ -366,24 +930,76 @@
                                   Margin="16,0,0,0"/>
                     </StackPanel>
 
-                    <!-- Audio Player -->
-                    <GroupBox Header="Audio-Player" Margin="0,0,0,8" Padding="8">
+                    <!-- Audio Preview Player -->
+                    <GroupBox Header="Audio-Preview" Margin="0,0,0,8" Padding="8">
                         <StackPanel>
                             <MediaElement x:Name="AudioPlayer"
                                           LoadedBehavior="Manual"
                                           UnloadedBehavior="Stop"
-                                          MediaEnded="AudioPlayer_MediaEnded"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <Button x:Name="PlayButton" Content="Play" Width="60" Margin="0,0,4,0" Click="OnPlayClick" IsEnabled="False"/>
-                                <Button x:Name="PauseButton" Content="Pause" Width="60" Margin="0,0,4,0" Click="OnPauseClick" IsEnabled="False"/>
-                                <Button x:Name="StopButton" Content="Stop" Width="60" Margin="0,0,4,0" Click="OnStopClick" IsEnabled="False"/>
-                                <Button x:Name="DownloadButton" Content="Download" Width="70" Margin="0,0,8,0" Click="OnDownloadClick" IsEnabled="False"/>
-                                <TextBlock x:Name="AudioStatusText" Text="Kein Audio geladen" VerticalAlignment="Center" Foreground="Gray"/>
+                                          MediaEnded="AudioPlayer_MediaEnded"
+                                          MediaFailed="AudioPlayer_MediaFailed"/>
+
+                            <!-- Status-Anzeige -->
+                            <Border Background="#F5F5F5" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock x:Name="AudioPreviewStatusText"
+                                               Text="Bereit - Waehle eine Quest und klicke auf M oder W"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="AudioPreviewDetailText"
+                                               Text=""
+                                               Foreground="Gray"
+                                               FontSize="11"
+                                               Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Schnellzugriff: Male/Female anhoeren -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button x:Name="PlayMaleButton" Content="Male anhoeren" Width="110" Margin="0,0,8,0"
+                                        Click="OnPlayMaleClick" IsEnabled="False"
+                                        Background="#2196F3" Foreground="White"
+                                        ToolTip="Maennliche Erzaehler-Stimme abspielen"/>
+                                <Button x:Name="PlayFemaleButton" Content="Female anhoeren" Width="120" Margin="0,0,8,0"
+                                        Click="OnPlayFemaleClick" IsEnabled="False"
+                                        Background="#E91E63" Foreground="White"
+                                        ToolTip="Weibliche Erzaehler-Stimme abspielen"/>
+                                <Button x:Name="StopPreviewButton" Content="Stop" Width="60" Margin="0,0,8,0"
+                                        Click="OnStopPreviewClick"
+                                        ToolTip="Wiedergabe stoppen"/>
+                            </StackPanel>
+
+                            <!-- Lautstaerke-Regler -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Lautstaerke:" VerticalAlignment="Center" Width="70"/>
+                                <Slider x:Name="VolumeSlider"
+                                        Minimum="0" Maximum="1" Value="0.8"
+                                        Width="150"
+                                        VerticalAlignment="Center"
+                                        ValueChanged="VolumeSlider_ValueChanged"
+                                        ToolTip="Lautstaerke anpassen"/>
+                                <TextBlock Text="{Binding ElementName=VolumeSlider, Path=Value, StringFormat={}{0:P0}}"
+                                           VerticalAlignment="Center"
+                                           Width="40" Margin="8,0,0,0"/>
+                            </StackPanel>
+
+                            <!-- Zusaetzliche Steuerung -->
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="PlayButton" Content="Play" Width="60" Margin="0,0,4,0"
+                                        Click="OnPlayClick" IsEnabled="False"/>
+                                <Button x:Name="PauseButton" Content="Pause" Width="60" Margin="0,0,4,0"
+                                        Click="OnPauseClick" IsEnabled="False"/>
+                                <Button x:Name="StopButton" Content="Stop" Width="60" Margin="0,0,4,0"
+                                        Click="OnStopClick" IsEnabled="False"/>
+                                <Button x:Name="DownloadButton" Content="Download" Width="70" Margin="0,0,0,0"
+                                        Click="OnDownloadClick" IsEnabled="False"/>
+                                <TextBlock x:Name="AudioStatusText" Text=""
+                                           VerticalAlignment="Center" Foreground="Gray" Margin="8,0,0,0"/>
                             </StackPanel>
                         </StackPanel>
                     </GroupBox>
 
-                    <!-- Progress-Anzeige für TTS -->
+                    <!-- Progress-Anzeige fuer TTS -->
                     <Grid x:Name="TtsProgressPanel" Visibility="Collapsed" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -412,6 +1028,16 @@
                                 Margin="0,0,8,0"
                                 Click="OnTtsPreviewClick"
                                 ToolTip="Generiert TTS-Preview und spielt ab"/>
+                        <Button x:Name="GenerateSingleTtsButton"
+                                Content="Einzelne Quest vertonen"
+                                Width="150"
+                                Height="30"
+                                Margin="0,0,8,0"
+                                Click="OnGenerateSingleTtsClick"
+                                Background="#4CAF50"
+                                Foreground="White"
+                                FontWeight="SemiBold"
+                                ToolTip="Generiert TTS fuer die ausgewaehlte Quest (M+W)"/>
                         <Button x:Name="GenerateDualTtsButton"
                                 Content="TTS (M+W) generieren"
                                 Width="150"
@@ -421,7 +1047,8 @@
                                 Background="#673AB7"
                                 Foreground="White"
                                 FontWeight="SemiBold"
-                                ToolTip="Generiert TTS für diese Quest in männlicher und weiblicher Stimme"/>
+                                ToolTip="Generiert TTS fuer diese Quest in maennlicher und weiblicher Stimme"
+                                Visibility="Collapsed"/>
                         <Button x:Name="CancelBatchButton"
                                 Content="Abbrechen"
                                 Width="80"
@@ -431,24 +1058,40 @@
                                 Visibility="Collapsed"
                                 Background="#F44336"
                                 Foreground="White"/>
-                        <Button Content="Geprüft"
+                        <Button Content="Geprueft"
                                 Width="70"
                                 Height="30"
                                 Margin="0,0,8,0"
                                 Click="OnMarkReviewedClick"
-                                ToolTip="Quest als geprüft markieren"/>
-                        <Button Content="Nächste"
+                                ToolTip="Quest als geprueft markieren"/>
+                        <Button Content="Naechste"
                                 Width="70"
                                 Height="30"
+                                Margin="0,0,8,0"
                                 Click="OnNextQuestClick"
-                                ToolTip="Zur nächsten Quest springen"/>
+                                ToolTip="Zur naechsten Quest springen"/>
+                        <Button Content="Main"
+                                Width="60"
+                                Height="30"
+                                Margin="0,0,4,0"
+                                Click="OnMarkAsMainQuestClick"
+                                Background="#2196F3"
+                                Foreground="White"
+                                ToolTip="Als Hauptquest markieren"/>
+                        <Button Content="Side"
+                                Width="60"
+                                Height="30"
+                                Click="OnMarkAsSideQuestClick"
+                                Background="#9E9E9E"
+                                Foreground="White"
+                                ToolTip="Als Nebenquest markieren"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
         </Grid>
 
-        <!-- Status Bar -->
-        <StatusBar Grid.Row="3">
+        <!-- ==================== STATUS BAR (Zeile 4) ==================== -->
+        <StatusBar Grid.Row="4">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="Bereit"/>
             </StatusBarItem>
@@ -471,7 +1114,7 @@
                             Height="18"
                             FontSize="10"
                             Click="OnResetSessionTrackerClick"
-                            ToolTip="Session-Tracker zurücksetzen"/>
+                            ToolTip="Session-Tracker zuruecksetzen"/>
                 </StackPanel>
             </StatusBarItem>
             <Separator/>

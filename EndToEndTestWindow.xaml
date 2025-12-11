@@ -1,0 +1,156 @@
+<Window x:Class="WowQuestTtsTool.EndToEndTestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="End-to-End Test - WoW Quest TTS Tool"
+        Width="800"
+        Height="650"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock Text="End-to-End Pipeline-Test" FontSize="24" FontWeight="Bold"/>
+            <TextBlock Text="Testet die komplette Pipeline: Quest -> TTS -> Audio -> Index -> Addon"
+                       Foreground="#666" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Info-Box -->
+        <Border Grid.Row="1" Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,15">
+            <StackPanel>
+                <TextBlock FontWeight="SemiBold" Text="Was wird getestet?" Margin="0,0,0,6"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12">
+                    1. Quest aus der Datenquelle laden
+                    2. TTS-Text vorbereiten
+                    3. Audio mit TTS-Service generieren
+                    4. MP3-Datei speichern
+                    5. Audio-Index aktualisieren
+                    6. WowTts_Data.lua generieren
+                    7. Audio ins Addon kopieren
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <!-- Test-Konfiguration -->
+        <GroupBox Grid.Row="2" Header="Test-Konfiguration" Padding="10" Margin="0,0,0,15">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Quest-ID -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Test-Quest-ID:"
+                           VerticalAlignment="Center" Margin="0,0,10,8"/>
+                <TextBox x:Name="TestQuestIdTextBox" Grid.Row="0" Grid.Column="1"
+                         Width="120" Height="28" Padding="8,5" HorizontalAlignment="Left" Margin="0,0,0,8"
+                         ToolTip="Leer lassen fuer automatische Auswahl einer geeigneten Quest"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="2"
+                           Text="(leer = automatische Auswahl)" Foreground="Gray"
+                           VerticalAlignment="Center" Margin="10,0,0,8"/>
+
+                <!-- Optionen -->
+                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal">
+                    <CheckBox x:Name="OnlyMaleVoiceCheckBox" Content="Nur maennliche Stimme"
+                              IsChecked="True" Margin="0,0,20,0"/>
+                    <CheckBox x:Name="ExportToAddonCheckBox" Content="Addon-Export durchfuehren"
+                              IsChecked="True" Margin="0,0,20,0"/>
+                </StackPanel>
+            </Grid>
+        </GroupBox>
+
+        <!-- Log-Ausgabe -->
+        <GroupBox Grid.Row="3" Header="Test-Log" Padding="10">
+            <TextBox x:Name="LogTextBox"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="11"
+                     Background="#1E1E1E"
+                     Foreground="#D4D4D4"/>
+        </GroupBox>
+
+        <!-- Progress-Bereich -->
+        <Grid Grid.Row="4" Margin="0,15,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <ProgressBar x:Name="ProgressBar" Grid.Row="0" Grid.Column="0" Height="24" Minimum="0" Maximum="100" Value="0"/>
+            <TextBlock x:Name="ProgressPercentText" Grid.Row="0" Grid.Column="1" Margin="10,0,0,0"
+                       VerticalAlignment="Center" Width="50" Text="0%"/>
+
+            <TextBlock x:Name="StatusText" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                       Margin="0,6,0,0" Text="Bereit" Foreground="Gray"/>
+        </Grid>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="5" Margin="0,15,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Start-Button -->
+            <Button x:Name="StartTestButton" Grid.Column="0"
+                    Content="End-to-End-Test starten"
+                    Width="200" Height="40"
+                    Click="OnStartTestClick"
+                    Background="#4CAF50" Foreground="White" FontWeight="SemiBold" FontSize="14">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <!-- Abbrechen-Button -->
+            <Button x:Name="CancelTestButton" Grid.Column="2"
+                    Content="Abbrechen"
+                    Width="100" Height="40" Margin="0,0,10,0"
+                    Click="OnCancelTestClick"
+                    IsEnabled="False"/>
+
+            <!-- Schliessen-Button -->
+            <Button x:Name="CloseButton" Grid.Column="3"
+                    Content="Schliessen"
+                    Width="100" Height="40"
+                    Click="OnCloseClick"
+                    IsCancel="True"/>
+        </Grid>
+    </Grid>
+</Window>

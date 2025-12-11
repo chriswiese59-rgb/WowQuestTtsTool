@@ -7,16 +7,10 @@ namespace WowQuestTtsTool.Services
     /// ITtsService-Implementierung für ElevenLabs.
     /// Wrapppt den bestehenden ElevenLabsService für die einheitliche TTS-Schnittstelle.
     /// </summary>
-    public class ElevenLabsTtsService : ITtsService
+    public class ElevenLabsTtsService(ElevenLabsService elevenLabsService, TtsConfigService configService) : ITtsService
     {
-        private readonly ElevenLabsService _elevenLabsService;
-        private readonly TtsConfigService _configService;
-
-        public ElevenLabsTtsService(ElevenLabsService elevenLabsService, TtsConfigService configService)
-        {
-            _elevenLabsService = elevenLabsService ?? throw new ArgumentNullException(nameof(elevenLabsService));
-            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
-        }
+        private readonly ElevenLabsService _elevenLabsService = elevenLabsService ?? throw new ArgumentNullException(nameof(elevenLabsService));
+        private readonly TtsConfigService _configService = configService ?? throw new ArgumentNullException(nameof(configService));
 
         public bool IsConfigured => _elevenLabsService.IsConfigured;
 

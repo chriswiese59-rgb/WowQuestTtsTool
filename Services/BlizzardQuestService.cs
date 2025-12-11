@@ -9,26 +9,18 @@ using System.Threading.Tasks;
 
 namespace WowQuestTtsTool.Services
 {
-    public class BlizzardQuestService
+    public class BlizzardQuestService(HttpClient http, string clientId, string clientSecret, string region = "eu")
     {
-        private readonly HttpClient _http;
-        private readonly string _clientId;
-        private readonly string _clientSecret;
-        private readonly string _region;
+        private readonly HttpClient _http = http;
+        private readonly string _clientId = clientId;
+        private readonly string _clientSecret = clientSecret;
+        private readonly string _region = region;
 
         private string? _accessToken;
         private DateTime _tokenExpiresUtc;
 
         private string BaseUrl => $"https://{_region}.api.blizzard.com";
         private string TokenUrl => $"https://{_region}.battle.net/oauth/token";
-
-        public BlizzardQuestService(HttpClient http, string clientId, string clientSecret, string region = "eu")
-        {
-            _http = http;
-            _clientId = clientId;
-            _clientSecret = clientSecret;
-            _region = region;
-        }
 
         public bool IsConfigured => !string.IsNullOrEmpty(_clientId) && !string.IsNullOrEmpty(_clientSecret);
 
@@ -137,10 +129,10 @@ namespace WowQuestTtsTool.Services
             // Try different property names based on kind
             string[] possibleProps = kind switch
             {
-                "area" => new[] { "areas", "area" },
-                "category" => new[] { "categories", "category" },
-                "type" => new[] { "types", "type" },
-                _ => new[] { kind + "s", kind }
+                "area" => ["areas", "area"],
+                "category" => ["categories", "category"],
+                "type" => ["types", "type"],
+                _ => [kind + "s", kind]
             };
 
             JsonElement arr = default;
@@ -222,7 +214,7 @@ namespace WowQuestTtsTool.Services
             return TransformQuest(raw);
         }
 
-        private Quest? TransformQuest(JsonElement raw)
+        private static Quest? TransformQuest(JsonElement raw)
         {
             if (raw.ValueKind != JsonValueKind.Object)
                 return null;
@@ -264,7 +256,7 @@ namespace WowQuestTtsTool.Services
             };
         }
 
-        private string BuildCompletionText(JsonElement raw)
+        private static string BuildCompletionText(JsonElement raw)
         {
             if (!raw.TryGetProperty("rewards", out var rewardsEl) ||
                 rewardsEl.ValueKind != JsonValueKind.Object)

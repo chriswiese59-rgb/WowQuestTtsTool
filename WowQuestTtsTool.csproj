@@ -1,11 +1,41 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
+
+    <!-- App-Metadaten -->
+    <AssemblyName>WowQuestTtsTool</AssemblyName>
+    <Product>WoW Quest TTS Tool</Product>
+    <Description>Tool zur Generierung von TTS-Audio fuer World of Warcraft Quests</Description>
+    <Company>WowQuestTtsTool</Company>
+    <Copyright>Copyright © 2024</Copyright>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <!-- Icon (optional - falls vorhanden) -->
+    <!-- <ApplicationIcon>app.ico</ApplicationIcon> -->
   </PropertyGroup>
+
+  <!-- Release/Publish Konfiguration -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <!-- KEIN Trimming fuer WPF - kann zu Laufzeitfehlern fuehren -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <!-- NuGet-Pakete -->
+  <ItemGroup>
+    <!-- MySqlConnector fuer AzerothCore Datenbank-Zugriff -->
+    <!-- Installation: Projekt -> NuGet-Pakete verwalten -> MySqlConnector suchen -> installieren -->
+    <PackageReference Include="MySqlConnector" Version="2.5.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Update="data\quests_deDE.json">

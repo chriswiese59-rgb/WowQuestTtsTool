@@ -12,6 +12,7 @@ namespace WowQuestTtsTool.Services
     public class TtsExportSettings : INotifyPropertyChanged
     {
         private static readonly string SettingsPath;
+        private static readonly JsonSerializerOptions s_jsonOptions = new() { WriteIndented = true };
         private static TtsExportSettings? _instance;
 
         private string _outputRootPath = "";
@@ -271,8 +272,7 @@ namespace WowQuestTtsTool.Services
                     Directory.CreateDirectory(directory);
                 }
 
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                var json = JsonSerializer.Serialize(this, options);
+                var json = JsonSerializer.Serialize(this, s_jsonOptions);
                 File.WriteAllText(SettingsPath, json);
             }
             catch
@@ -282,41 +282,30 @@ namespace WowQuestTtsTool.Services
         }
 
         /// <summary>
-        /// Ermittelt den vollständigen Ausgabepfad für eine Quest (Legacy-Methode).
+        /// Ermittelt den vollständigen Ausgabepfad für eine Quest.
+        /// NEUE Struktur: {Root}/{Language}/{Zone}/{Category}/Quest_{ID}_{Category}_{Gender}_{Title}.mp3
         /// </summary>
-        public string GetOutputPath(Quest quest)
+        public string GetOutputPath(Quest quest, string genderCode = "neutral")
         {
-            var categoryFolder = quest.IsMainStory ? MainFolderName : SideFolderName;
-            var zone = string.IsNullOrWhiteSpace(quest.Zone) ? "UnknownZone" : quest.Zone;
-            var safeZone = SanitizeFileName(zone, 40);
-            var safeTitle = SanitizeFileName(quest.Title, 40);
-
-            var targetFolder = Path.Combine(OutputRootPath, "audio", LanguageCode, categoryFolder, safeZone);
-            var fileName = $"quest_{quest.QuestId}_{safeTitle}.mp3";
-
-            return Path.Combine(targetFolder, fileName);
+            return AudioPathHelper.GetAudioFilePath(OutputRootPath, LanguageCode, quest, genderCode);
         }
 
         /// <summary>
         /// Ermittelt den Ausgabepfad für die männliche Erzähler-Stimme.
+        /// NEUE Struktur: {Root}/{Language}/{Zone}/{Category}/Quest_{ID}_{Category}_male_{Title}.mp3
         /// </summary>
         public string GetMaleOutputPath(Quest quest)
         {
-            var zone = string.IsNullOrWhiteSpace(quest.Zone) ? "UnknownZone" : quest.Zone;
-            var safeZone = SanitizeFileName(zone, 40);
-            var targetFolder = Path.Combine(OutputRootPath, "audio", LanguageCode, "male", safeZone);
-            return Path.Combine(targetFolder, $"quest_{quest.QuestId}.mp3");
+            return AudioPathHelper.GetMaleAudioPath(OutputRootPath, LanguageCode, quest);
         }
 
         /// <summary>
         /// Ermittelt den Ausgabepfad für die weibliche Erzähler-Stimme.
+        /// NEUE Struktur: {Root}/{Language}/{Zone}/{Category}/Quest_{ID}_{Category}_female_{Title}.mp3
         /// </summary>
         public string GetFemaleOutputPath(Quest quest)
         {
-            var zone = string.IsNullOrWhiteSpace(quest.Zone) ? "UnknownZone" : quest.Zone;
-            var safeZone = SanitizeFileName(zone, 40);
-            var targetFolder = Path.Combine(OutputRootPath, "audio", LanguageCode, "female", safeZone);
-            return Path.Combine(targetFolder, $"quest_{quest.QuestId}.mp3");
+            return AudioPathHelper.GetFemaleAudioPath(OutputRootPath, LanguageCode, quest);
         }
 
         /// <summary>
@@ -374,7 +363,7 @@ namespace WowQuestTtsTool.Services
             // Auf maximale Länge kürzen
             if (result.Length > maxLength)
             {
-                result = result.Substring(0, maxLength).TrimEnd('_');
+                result = result[..maxLength].TrimEnd('_');
             }
 
             return string.IsNullOrEmpty(result) ? "Unknown" : result;

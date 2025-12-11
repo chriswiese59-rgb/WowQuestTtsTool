@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Serialization;
@@ -143,9 +144,63 @@ namespace WowQuestTtsTool
             }
         }
 
+        // === Lokalisierungs-Flags ===
+
+        /// <summary>
+        /// Gibt an, ob der Titel auf Deutsch vorhanden ist.
+        /// </summary>
+        [JsonPropertyName("has_title_de")]
+        public bool HasTitleDe { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob die Beschreibung auf Deutsch vorhanden ist.
+        /// </summary>
+        [JsonPropertyName("has_description_de")]
+        public bool HasDescriptionDe { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob die Ziele auf Deutsch vorhanden sind.
+        /// </summary>
+        [JsonPropertyName("has_objectives_de")]
+        public bool HasObjectivesDe { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob der Abschlusstext auf Deutsch vorhanden ist.
+        /// </summary>
+        [JsonPropertyName("has_completion_de")]
+        public bool HasCompletionDe { get; set; }
+
+        /// <summary>
+        /// Lokalisierungsstatus der Quest (DE/EN/Mixed/Incomplete).
+        /// </summary>
+        [JsonPropertyName("localization_status")]
+        public QuestLocalizationStatus LocalizationStatus { get; set; } = QuestLocalizationStatus.Incomplete;
+
+        /// <summary>
+        /// Gibt an, ob die Quest vollstaendig auf Deutsch lokalisiert ist.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsFullyLocalizedDe => LocalizationStatus == QuestLocalizationStatus.FullyGerman;
+
+        /// <summary>
+        /// Kurzname des Lokalisierungsstatus (fuer UI).
+        /// </summary>
+        [JsonIgnore]
+        public string LocalizationStatusShortName => LocalizationStatus.ToShortName();
+
+        /// <summary>
+        /// Anzeigename des Lokalisierungsstatus (fuer UI).
+        /// </summary>
+        [JsonIgnore]
+        public string LocalizationStatusDisplayName => LocalizationStatus.ToDisplayName();
+
         // Flag für TTS-Review
         [JsonPropertyName("tts_reviewed")]
         public bool TtsReviewed { get; set; }
+
+        // Benutzerdefinierter TTS-Text (überschreibt automatisch generierten Text)
+        [JsonPropertyName("custom_tts_text")]
+        public string? CustomTtsText { get; set; }
 
         // Flag ob TTS-Audio bereits generiert wurde (Legacy, für Kompatibilität)
         [JsonPropertyName("has_tts_audio")]
@@ -162,6 +217,48 @@ namespace WowQuestTtsTool
         // TTS-Status für weibliche Erzähler-Stimme
         [JsonPropertyName("has_female_tts")]
         public bool HasFemaleTts { get; set; }
+
+        // Zeitstempel der letzten TTS-Generierung (optional)
+        [JsonPropertyName("last_tts_generated_at")]
+        public DateTime? LastTtsGeneratedAt { get; set; }
+
+        // Letzter TTS-Fehler (falls vorhanden)
+        [JsonPropertyName("last_tts_error")]
+        public string? LastTtsError { get; set; }
+
+        // Zeitstempel des letzten TTS-Fehlers
+        [JsonPropertyName("last_tts_error_at")]
+        public DateTime? LastTtsErrorAt { get; set; }
+
+        // Anzahl der Fehlversuche
+        [JsonPropertyName("tts_error_count")]
+        public int TtsErrorCount { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob die Quest einen TTS-Fehler hat.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasTtsError => !string.IsNullOrEmpty(LastTtsError);
+
+        /// <summary>
+        /// Setzt den TTS-Fehler zurück.
+        /// </summary>
+        public void ClearTtsError()
+        {
+            LastTtsError = null;
+            LastTtsErrorAt = null;
+            TtsErrorCount = 0;
+        }
+
+        /// <summary>
+        /// Setzt einen TTS-Fehler.
+        /// </summary>
+        public void SetTtsError(string error)
+        {
+            LastTtsError = error;
+            LastTtsErrorAt = DateTime.Now;
+            TtsErrorCount++;
+        }
 
         /// <summary>
         /// Aktualisiert die TTS-Flags basierend auf vorhandenen Dateien im Dateisystem.
@@ -204,7 +301,42 @@ namespace WowQuestTtsTool
         }
 
         // Hilfseigenschaft für TTS-Text (alle relevanten Textteile)
+        /// <summary>
+        /// Gibt den Text für TTS-Generierung zurück.
+        /// Verwendet CustomTtsText falls vorhanden, sonst automatisch generierten Text.
+        /// </summary>
         public string TtsText
+        {
+            get
+            {
+                // Benutzerdefinierter Text hat Vorrang
+                if (!string.IsNullOrWhiteSpace(CustomTtsText))
+                    return CustomTtsText;
+
+                // Automatisch generierter Text
+                var parts = new List<string>();
+
+                if (!string.IsNullOrWhiteSpace(Title))
+                    parts.Add(Title);
+
+                if (!string.IsNullOrWhiteSpace(Description))
+                    parts.Add(Description);
+
+                if (!string.IsNullOrWhiteSpace(Objectives))
+                    parts.Add($"Ziele: {Objectives}");
+
+                if (!string.IsNullOrWhiteSpace(Completion))
+                    parts.Add($"Abschluss: {Completion}");
+
+                return string.Join(". ", parts);
+            }
+        }
+
+        /// <summary>
+        /// Gibt den automatisch generierten TTS-Text zurück (ohne Custom-Override).
+        /// </summary>
+        [JsonIgnore]
+        public string AutoGeneratedTtsText
         {
             get
             {
@@ -225,5 +357,11 @@ namespace WowQuestTtsTool
                 return string.Join(". ", parts);
             }
         }
+
+        /// <summary>
+        /// Gibt an, ob ein benutzerdefinierter TTS-Text verwendet wird.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasCustomTtsText => !string.IsNullOrWhiteSpace(CustomTtsText);
     }
 }
