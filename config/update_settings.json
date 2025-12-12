@@ -1,0 +1,10 @@
+{
+  "updateManifestUrl": "http://localhost:8080/updates.json",
+  "installBaseDirectory": "",
+  "updaterExeName": "WowQuestTtsUpdater.exe",
+  "mainExeName": "WowQuestTtsTool.exe",
+  "checkUpdatesOnStartup": true,
+  "lastUpdateCheck": null,
+  "updateCheckIntervalHours": 24,
+  "skippedVersion": null
+}

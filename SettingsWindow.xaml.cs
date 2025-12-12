@@ -1,9 +1,11 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Win32;
 using WowQuestTtsTool.Services;
 
 namespace WowQuestTtsTool
@@ -50,6 +52,10 @@ namespace WowQuestTtsTool
 
             VoiceIdBox.Text = config.ElevenLabs.VoiceId;
 
+            // Male/Female Voice-IDs im ElevenLabs Tab
+            ElevenLabsMaleVoiceIdBox.Text = exportSettings.MaleVoiceId;
+            ElevenLabsFemaleVoiceIdBox.Text = exportSettings.FemaleVoiceId;
+
             foreach (ComboBoxItem item in ModelIdCombo.Items)
             {
                 if (item.Tag?.ToString() == config.ElevenLabs.ModelId)
@@ -87,6 +93,9 @@ namespace WowQuestTtsTool
 
             // LLM
             LoadLlmSettings(config);
+
+            // SQLite
+            LoadSqliteSettings(exportSettings);
 
             UpdateStatus();
         }
@@ -398,6 +407,16 @@ namespace WowQuestTtsTool
             }
         }
 
+        private async void TestElevenLabsMaleVoice_Click(object sender, RoutedEventArgs e)
+        {
+            await TestVoice(ElevenLabsMaleVoiceIdBox.Text?.Trim(), "maennliche");
+        }
+
+        private async void TestElevenLabsFemaleVoice_Click(object sender, RoutedEventArgs e)
+        {
+            await TestVoice(ElevenLabsFemaleVoiceIdBox.Text?.Trim(), "weibliche");
+        }
+
         #endregion
 
         #region Blizzard
@@ -630,6 +649,126 @@ namespace WowQuestTtsTool
 
         #endregion
 
+        #region SQLite
+
+        private void LoadSqliteSettings(TtsExportSettings exportSettings)
+        {
+            UseSqliteCheckBox.IsChecked = exportSettings.UseSqliteDatabase;
+            SqlitePathBox.Text = exportSettings.SqliteDatabasePath;
+            UpdateSqlitePanelState();
+        }
+
+        private void UseSqliteCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateSqlitePanelState();
+        }
+
+        private void UpdateSqlitePanelState()
+        {
+            var isEnabled = UseSqliteCheckBox.IsChecked ?? false;
+            SqlitePathPanel.IsEnabled = isEnabled;
+            SqliteStatsGroup.IsEnabled = isEnabled;
+            SqlitePathPanel.Opacity = isEnabled ? 1.0 : 0.5;
+            SqliteStatsGroup.Opacity = isEnabled ? 1.0 : 0.5;
+        }
+
+        private void BrowseSqlitePath_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "SQLite Quest-Datenbank auswählen",
+                Filter = "SQLite Datenbanken (*.db)|*.db|Alle Dateien (*.*)|*.*",
+                CheckFileExists = true
+            };
+
+            if (!string.IsNullOrEmpty(SqlitePathBox.Text))
+            {
+                var dir = Path.GetDirectoryName(SqlitePathBox.Text);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                {
+                    dialog.InitialDirectory = dir;
+                }
+            }
+
+            if (dialog.ShowDialog() == true)
+            {
+                SqlitePathBox.Text = dialog.FileName;
+                // Automatisch testen nach Auswahl
+                TestSqliteConnection_Click(sender, e);
+            }
+        }
+
+        private async void TestSqliteConnection_Click(object sender, RoutedEventArgs e)
+        {
+            var dbPath = SqlitePathBox.Text?.Trim();
+
+            if (string.IsNullOrWhiteSpace(dbPath))
+            {
+                SqliteStatusText.Text = "Kein Pfad angegeben";
+                SqliteQuestCountText.Text = "-";
+                SqliteZoneCountText.Text = "-";
+                return;
+            }
+
+            if (!File.Exists(dbPath))
+            {
+                SqliteStatusText.Text = "Datei nicht gefunden";
+                SqliteStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                SqliteQuestCountText.Text = "-";
+                SqliteZoneCountText.Text = "-";
+                return;
+            }
+
+            StatusText.Text = "Teste SQLite-Verbindung...";
+            StatusBorder.Background = new SolidColorBrush(Color.FromRgb(204, 229, 255));
+            StatusBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(184, 218, 255));
+
+            try
+            {
+                using var repository = new SqliteQuestRepository(dbPath);
+
+                var isConnected = await repository.TestConnectionAsync();
+                if (isConnected)
+                {
+                    var questCount = await repository.GetQuestCountAsync();
+                    var zones = await repository.GetAllZonesAsync();
+
+                    SqliteStatusText.Text = "Verbunden";
+                    SqliteStatusText.Foreground = new SolidColorBrush(Colors.Green);
+                    SqliteQuestCountText.Text = questCount.ToString("N0");
+                    SqliteZoneCountText.Text = zones.Count.ToString("N0");
+
+                    StatusBorder.Background = new SolidColorBrush(Color.FromRgb(212, 237, 218));
+                    StatusBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(195, 230, 203));
+                    StatusText.Text = $"SQLite-Verbindung erfolgreich! {questCount:N0} Quests in {zones.Count} Zonen.";
+                }
+                else
+                {
+                    SqliteStatusText.Text = "Verbindung fehlgeschlagen";
+                    SqliteStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                    SqliteQuestCountText.Text = "-";
+                    SqliteZoneCountText.Text = "-";
+
+                    StatusBorder.Background = new SolidColorBrush(Color.FromRgb(248, 215, 218));
+                    StatusBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(245, 198, 203));
+                    StatusText.Text = "SQLite-Verbindung fehlgeschlagen.";
+                }
+            }
+            catch (Exception ex)
+            {
+                SqliteStatusText.Text = "Fehler";
+                SqliteStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                SqliteQuestCountText.Text = "-";
+                SqliteZoneCountText.Text = "-";
+
+                StatusBorder.Background = new SolidColorBrush(Color.FromRgb(248, 215, 218));
+                StatusBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(245, 198, 203));
+                StatusText.Text = $"SQLite Fehler: {ex.Message}";
+            }
+        }
+
+        #endregion
+
         private void Save_Click(object sender, RoutedEventArgs e)
         {
             var config = _configService.Config;
@@ -664,6 +803,22 @@ namespace WowQuestTtsTool
             config.ElevenLabs.VoiceSettings.Stability = StabilitySlider.Value;
             config.ElevenLabs.VoiceSettings.SimilarityBoost = SimilaritySlider.Value;
 
+            // Male/Female Voice-IDs aus ElevenLabs Tab speichern
+            var maleVoiceId = ElevenLabsMaleVoiceIdBox.Text?.Trim() ?? "";
+            var femaleVoiceId = ElevenLabsFemaleVoiceIdBox.Text?.Trim() ?? "";
+            if (!string.IsNullOrEmpty(maleVoiceId))
+            {
+                exportSettings.MaleVoiceId = maleVoiceId;
+                // Auch im Stimmen-Tab synchronisieren
+                MaleVoiceIdBox.Text = maleVoiceId;
+            }
+            if (!string.IsNullOrEmpty(femaleVoiceId))
+            {
+                exportSettings.FemaleVoiceId = femaleVoiceId;
+                // Auch im Stimmen-Tab synchronisieren
+                FemaleVoiceIdBox.Text = femaleVoiceId;
+            }
+
             // Blizzard
             config.Blizzard.ClientId = BlizzardClientIdBox.Text?.Trim() ?? "";
             config.Blizzard.ClientSecret = _blizzardSecret;
@@ -689,6 +844,10 @@ namespace WowQuestTtsTool
 
             var systemPrompt = LlmSystemPromptBox.Text?.Trim();
             config.Llm.SystemPrompt = string.IsNullOrEmpty(systemPrompt) ? null : systemPrompt;
+
+            // SQLite
+            exportSettings.UseSqliteDatabase = UseSqliteCheckBox.IsChecked ?? false;
+            exportSettings.SqliteDatabasePath = SqlitePathBox.Text?.Trim() ?? "";
 
             try
             {

@@ -49,6 +49,37 @@
                         Foreground="White"
                         FontWeight="SemiBold"/>
 
+                <!-- Merged Button (Blizzard + AzerothCore kombiniert) -->
+                <Button x:Name="LoadMergedButton"
+                        Content="Merged laden"
+                        Width="100"
+                        Height="26"
+                        Margin="0,0,4,0"
+                        Click="OnLoadMergedClick"
+                        Background="#9C27B0"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        ToolTip="Kombiniert Blizzard + AzerothCore Daten"/>
+
+                <!-- SQLite Button mit Limit -->
+                <Button x:Name="LoadFromSqliteButton"
+                        Content="SQLite"
+                        Width="60"
+                        Height="26"
+                        Margin="0,0,4,0"
+                        Click="OnLoadFromSqliteClick"
+                        Background="#2196F3"
+                        Foreground="White"
+                        ToolTip="Nur AzerothCore-Daten laden"/>
+                <TextBox x:Name="SqliteLoadLimitBox"
+                         Width="45"
+                         Height="26"
+                         Margin="0,0,8,0"
+                         VerticalContentAlignment="Center"
+                         HorizontalContentAlignment="Center"
+                         Text="500"
+                         ToolTip="Max. Anzahl Quests (0 = alle)"/>
+
                 <!-- Import Button -->
                 <Button Content="JSON laden"
                         Width="90"
@@ -74,6 +105,31 @@
                         Click="OnSettingsClick"
                         Background="#2196F3"
                         Foreground="White"/>
+
+                <!-- Update Button -->
+                <Button x:Name="UpdateButton"
+                        Content="Updates"
+                        Width="80"
+                        Height="26"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,0,0"
+                        Click="OnCheckUpdatesClick"
+                        Background="#607D8B"
+                        Foreground="White"
+                        ToolTip="Nach Updates suchen"/>
+                <Border x:Name="UpdateBadge"
+                        DockPanel.Dock="Right"
+                        Background="#F44336"
+                        CornerRadius="8"
+                        Width="16"
+                        Height="16"
+                        Margin="-20,0,4,0"
+                        VerticalAlignment="Top"
+                        Visibility="Collapsed"
+                        ToolTip="Update verfuegbar!">
+                    <TextBlock Text="!" Foreground="White" FontSize="10" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
 
                 <!-- NEU: Progress Button -->
                 <Button x:Name="ProgressButton"
@@ -1028,16 +1084,27 @@
                                 Margin="0,0,8,0"
                                 Click="OnTtsPreviewClick"
                                 ToolTip="Generiert TTS-Preview und spielt ab"/>
+                        <!-- Stimmen-Auswahl ComboBox -->
+                        <ComboBox x:Name="VoiceSelectionCombo"
+                                  Width="100"
+                                  Height="30"
+                                  Margin="0,0,4,0"
+                                  SelectedIndex="0"
+                                  ToolTip="Waehle welche Stimme(n) generiert werden sollen">
+                            <ComboBoxItem Content="Beide (M+W)" Tag="both"/>
+                            <ComboBoxItem Content="Nur Maennlich" Tag="male"/>
+                            <ComboBoxItem Content="Nur Weiblich" Tag="female"/>
+                        </ComboBox>
                         <Button x:Name="GenerateSingleTtsButton"
-                                Content="Einzelne Quest vertonen"
-                                Width="150"
+                                Content="Quest vertonen"
+                                Width="110"
                                 Height="30"
                                 Margin="0,0,8,0"
                                 Click="OnGenerateSingleTtsClick"
                                 Background="#4CAF50"
                                 Foreground="White"
                                 FontWeight="SemiBold"
-                                ToolTip="Generiert TTS fuer die ausgewaehlte Quest (M+W)"/>
+                                ToolTip="Generiert TTS fuer die ausgewaehlte Quest"/>
                         <Button x:Name="GenerateDualTtsButton"
                                 Content="TTS (M+W) generieren"
                                 Width="150"

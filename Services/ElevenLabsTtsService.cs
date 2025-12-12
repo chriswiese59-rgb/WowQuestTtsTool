@@ -64,7 +64,7 @@ namespace WowQuestTtsTool.Services
 
         /// <summary>
         /// Löst einen Voice-Profilnamen zu einer echten Voice-ID auf.
-        /// Falls bereits eine Voice-ID übergeben wird, wird diese zurückgegeben.
+        /// Falls bereits eine Voice-ID übergeben wird, wird diese direkt zurückgegeben.
         /// </summary>
         private string ResolveVoiceId(string voiceIdOrProfile)
         {
@@ -74,18 +74,22 @@ namespace WowQuestTtsTool.Services
                 return _configService.Config.ElevenLabs.VoiceId;
             }
 
-            // Versuche als Profilname aufzulösen
-            var resolvedId = _configService.GetVoiceId(voiceIdOrProfile);
-
-            // Falls GetVoiceId den gleichen Wert zurückgibt (kein Profil gefunden),
-            // prüfen ob es eine gültige Voice-ID sein könnte (ElevenLabs IDs sind 20+ Zeichen)
-            if (resolvedId == voiceIdOrProfile && voiceIdOrProfile.Length < 15)
+            // ElevenLabs Voice-IDs sind 20+ Zeichen lang
+            // Wenn die Eingabe lang genug ist, ist es wahrscheinlich bereits eine Voice-ID
+            if (voiceIdOrProfile.Length >= 20)
             {
-                // Wahrscheinlich ein unbekannter Profilname, Fallback auf Default
-                return _configService.Config.ElevenLabs.VoiceId;
+                // Direkt als Voice-ID verwenden
+                return voiceIdOrProfile;
             }
 
-            return resolvedId;
+            // Kurze Strings koennten Profilnamen sein - versuche aufzuloesen
+            if (_configService.Config.VoiceProfiles.TryGetValue(voiceIdOrProfile, out var profile))
+            {
+                return profile.VoiceId;
+            }
+
+            // Unbekannter Profilname - Fallback auf Default
+            return _configService.Config.ElevenLabs.VoiceId;
         }
     }
 }

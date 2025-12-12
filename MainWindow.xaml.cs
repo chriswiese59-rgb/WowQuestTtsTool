@@ -14,6 +14,7 @@ using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
 using WowQuestTtsTool.Services;
+using WowQuestTtsTool.Services.Update;
 
 namespace WowQuestTtsTool
 {
@@ -65,6 +66,7 @@ namespace WowQuestTtsTool
         public QuestDbConfig QuestDbConfig => _questDbConfig;
         private string? _currentAudioPath;
         private readonly string _questsCachePath;
+        private readonly string _blizzardCachePath;  // Separater Cache fuer Blizzard-Daten
 
         // TTS Export Service
         private ITtsService _ttsService;
@@ -75,6 +77,9 @@ namespace WowQuestTtsTool
 
         // LLM Text Enhancer Service (Hoerbuch-Optimierung)
         private LlmTextEnhancerService? _llmEnhancerService;
+
+        // Update Manager
+        private readonly UpdateManager _updateManager = new();
 
         // Batch-TTS Abbruch
         private CancellationTokenSource? _batchCancellation;
@@ -157,6 +162,7 @@ namespace WowQuestTtsTool
 
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             _questsCachePath = Path.Combine(baseDir, "data", "quests_cache.json");
+            _blizzardCachePath = Path.Combine(baseDir, "data", "blizzard_quests_cache.json");
 
             _configService = new TtsConfigService();
 
@@ -181,6 +187,7 @@ namespace WowQuestTtsTool
             InitializeLlmEnhancer();
             InitializeTtsExportUI();
             InitializeVoiceProfileComboBox();
+            InitializeUpdateManager();
 
             // CollectionView für Sortierung
             QuestsView = CollectionViewSource.GetDefaultView(FilteredQuests);
@@ -315,6 +322,40 @@ namespace WowQuestTtsTool
             }
         }
 
+        /// <summary>
+        /// Speichert Blizzard-Quests in einen SEPARATEN Cache.
+        /// Wird nicht von anderen Quellen ueberschrieben.
+        /// </summary>
+        private void SaveBlizzardCache(IEnumerable<Quest> quests)
+        {
+            try
+            {
+                var directory = Path.GetDirectoryName(_blizzardCachePath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                // Markiere alle als Blizzard-Quelle
+                var blizzardQuests = quests.Select(q =>
+                {
+                    q.HasBlizzardSource = true;
+                    q.HasAcoreSource = false;
+                    return q;
+                }).ToArray();
+
+                var options = s_jsonOptions;
+                var json = JsonSerializer.Serialize(blizzardQuests, options);
+                File.WriteAllText(_blizzardCachePath, json);
+
+                System.Diagnostics.Debug.WriteLine($"Blizzard-Cache gespeichert: {blizzardQuests.Length} Quests -> {_blizzardCachePath}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Fehler beim Speichern des Blizzard-Cache: {ex.Message}");
+            }
+        }
+
         private void InitializeElevenLabs()
         {
             try
@@ -402,6 +443,265 @@ namespace WowQuestTtsTool
             }
 
             StatusText.Text = $"Geladen: {Quests.Count} Quests aus {Path.GetFileName(path)}";
+        }
+
+        /// <summary>
+        /// Laedt Quests aus einer SQLite-Datenbank.
+        /// </summary>
+        /// <param name="limit">Maximale Anzahl Quests (0 = alle)</param>
+        private async Task LoadQuestsFromSqliteAsync(int limit = 0)
+        {
+            var dbPath = _exportSettings.SqliteDatabasePath;
+
+            if (string.IsNullOrWhiteSpace(dbPath) || !File.Exists(dbPath))
+            {
+                MessageBox.Show(
+                    "SQLite-Datenbank nicht gefunden.\n\n" +
+                    "Bitte in Einstellungen -> Quest-Datenbank den Pfad zur quests_deDE.db angeben.",
+                    "Datenbank fehlt",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var limitText = limit > 0 ? $" (max. {limit})" : " (alle)";
+            StatusText.Text = $"Lade Quests aus SQLite{limitText}...";
+            FetchFromBlizzardButton.IsEnabled = false;
+            LoadFromSqliteButton.IsEnabled = false;
+
+            try
+            {
+                using var repository = new SqliteQuestRepository(dbPath);
+                var allQuests = await repository.GetAllQuestsAsync();
+
+                Quests.Clear();
+                FilteredQuests.Clear();
+
+                // Sortiert nach Zone und QuestId, dann Limit anwenden
+                IEnumerable<Quest> sortedQuests = allQuests
+                    .OrderBy(q => q.Zone ?? "")
+                    .ThenBy(q => q.QuestId);
+
+                // Limit anwenden wenn > 0
+                if (limit > 0)
+                {
+                    sortedQuests = sortedQuests.Take(limit);
+                }
+
+                foreach (var q in sortedQuests)
+                {
+                    Quests.Add(q);
+                    FilteredQuests.Add(q);
+                }
+
+                // Kategorien aus Feldern ableiten
+                UpdateAllQuestsCategories();
+
+                // TTS-Flags basierend auf vorhandenen Dateien aktualisieren
+                UpdateAllQuestsTtsFlags();
+
+                // Filter-ComboBoxen befüllen
+                PopulateZoneFilter();
+                PopulateCategoryFilter();
+                PopulateZoneLoadComboBox();
+
+                if (FilteredQuests.Count > 0)
+                    SelectedQuest = FilteredQuests[0];
+
+                var totalInfo = limit > 0 && allQuests.Count > limit
+                    ? $" (von {allQuests.Count} gesamt)"
+                    : "";
+                StatusText.Text = $"Geladen: {Quests.Count} Quests aus SQLite{totalInfo}";
+
+                // Cache aktualisieren
+                SaveQuestsToCache();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler beim Laden aus SQLite:\n{ex.Message}",
+                    "SQLite-Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = $"SQLite-Fehler: {ex.Message}";
+            }
+            finally
+            {
+                FetchFromBlizzardButton.IsEnabled = true;
+                LoadFromSqliteButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Handler fuer "Von SQLite laden"-Button.
+        /// </summary>
+        private async void OnLoadFromSqliteClick(object sender, RoutedEventArgs e)
+        {
+            // Limit aus TextBox lesen
+            int limit = 0;
+            if (int.TryParse(SqliteLoadLimitBox.Text, out int parsedLimit) && parsedLimit > 0)
+            {
+                limit = parsedLimit;
+            }
+
+            await LoadQuestsFromSqliteAsync(limit);
+            ApplyDefaultQuestSorting();
+            PopulateZoneFilter();
+            PopulateZoneLoadComboBox();
+        }
+
+        /// <summary>
+        /// Handler fuer "Merged laden"-Button.
+        /// Kombiniert Blizzard-Daten mit AzerothCore-Daten.
+        /// </summary>
+        private async void OnLoadMergedClick(object sender, RoutedEventArgs e)
+        {
+            await LoadQuestsFromMergedRepositoryAsync();
+            ApplyDefaultQuestSorting();
+            PopulateZoneFilter();
+            PopulateZoneLoadComboBox();
+        }
+
+        /// <summary>
+        /// Laedt Quests aus dem MergedQuestRepository (Blizzard + AzerothCore).
+        /// WICHTIG:
+        /// - Blizzard ist die BASIS (nur diese Quests werden geladen)
+        /// - AzerothCore ERGAENZT nur fehlende Felder bei den Blizzard-Quests
+        /// - AzerothCore-only Quests werden NICHT hinzugefuegt!
+        /// </summary>
+        private async Task LoadQuestsFromMergedRepositoryAsync()
+        {
+            // Blizzard-Quelle: Separater Cache (wird NICHT von SQLite ueberschrieben)
+            var blizzardJsonPath = _blizzardCachePath;
+
+            // Falls manuell ein anderer Pfad konfiguriert wurde, diesen verwenden
+            if (!string.IsNullOrWhiteSpace(_exportSettings.BlizzardJsonPath) && File.Exists(_exportSettings.BlizzardJsonPath))
+            {
+                blizzardJsonPath = _exportSettings.BlizzardJsonPath;
+            }
+
+            // AzerothCore-Quelle: SQLite-Datenbank
+            var acoreSqlitePath = _exportSettings.SqliteDatabasePath;
+
+            // Blizzard MUSS vorhanden sein (ist die Basis)
+            bool hasBlizzard = File.Exists(blizzardJsonPath);
+            bool hasAcore = !string.IsNullOrWhiteSpace(acoreSqlitePath) && File.Exists(acoreSqlitePath);
+
+            if (!hasBlizzard)
+            {
+                MessageBox.Show(
+                    "Keine Blizzard-Daten vorhanden!\n\n" +
+                    "Bitte zuerst 'Von Blizzard laden' klicken (orange Button).\n\n" +
+                    "Die Blizzard-Quests sind die Basis.\n" +
+                    "AzerothCore ergaenzt nur fehlende Texte.",
+                    "Blizzard-Daten fehlen",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!hasAcore)
+            {
+                MessageBox.Show(
+                    "Keine AzerothCore-Datenbank konfiguriert!\n\n" +
+                    "Bitte in Einstellungen -> Quest-Datenbank\n" +
+                    "den Pfad zur SQLite-Datei angeben.\n\n" +
+                    "(Erstellt mit WowQuestExporter)",
+                    "AzerothCore fehlt",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"Merged: Blizzard={blizzardJsonPath}, ACore={acoreSqlitePath}");
+
+            StatusText.Text = "Lade und merge Quests (Blizzard + AzerothCore)...";
+            FetchFromBlizzardButton.IsEnabled = false;
+            LoadFromSqliteButton.IsEnabled = false;
+            LoadMergedButton.IsEnabled = false;
+
+            try
+            {
+                // Quellen erstellen
+                var blizzardSource = new BlizzardJsonQuestSource(blizzardJsonPath);
+                var acoreSource = new AcoreSqliteQuestSource(acoreSqlitePath ?? "");
+
+                // Merged Repository erstellen
+                var mergedRepo = new MergedQuestRepository(blizzardSource, acoreSource);
+
+                // Alle Quests laden (gemerged)
+                var mergedQuests = await mergedRepo.GetAllQuestsAsync();
+
+                Quests.Clear();
+                FilteredQuests.Clear();
+
+                // Sortiert nach Zone und QuestId hinzufuegen
+                var sortedQuests = mergedQuests
+                    .OrderBy(q => q.Zone ?? "")
+                    .ThenBy(q => q.QuestId);
+
+                foreach (var q in sortedQuests)
+                {
+                    Quests.Add(q);
+                    FilteredQuests.Add(q);
+                }
+
+                // Kategorien aus Feldern ableiten
+                UpdateAllQuestsCategories();
+
+                // TTS-Flags basierend auf vorhandenen Dateien aktualisieren
+                UpdateAllQuestsTtsFlags();
+
+                // Filter-ComboBoxen befuellen
+                PopulateZoneFilter();
+                PopulateCategoryFilter();
+                PopulateZoneLoadComboBox();
+
+                if (FilteredQuests.Count > 0)
+                    SelectedQuest = FilteredQuests[0];
+
+                // Statistik zaehlen
+                int blizzOnlyCount = mergedQuests.Count(q => q.HasBlizzardSource && !q.HasAcoreSource);
+                int acoreOnlyCount = mergedQuests.Count(q => q.HasAcoreSource && !q.HasBlizzardSource);
+                int bothCount = mergedQuests.Count(q => q.HasBlizzardSource && q.HasAcoreSource);
+                int totalBlizzard = blizzOnlyCount + bothCount;
+                int totalAcore = acoreOnlyCount + bothCount;
+
+                StatusText.Text = $"Merged: {Quests.Count} Quests (Blizzard: {totalBlizzard}, ACore: {totalAcore}, Kombiniert: {bothCount})";
+
+                // MessageBox mit Details
+                MessageBox.Show(
+                    $"Merged erfolgreich!\n\n" +
+                    $"Gesamt: {Quests.Count} Quests\n\n" +
+                    $"Quellen:\n" +
+                    $"  - Nur Blizzard: {blizzOnlyCount}\n" +
+                    $"  - Nur AzerothCore: {acoreOnlyCount}\n" +
+                    $"  - Beide kombiniert: {bothCount}\n\n" +
+                    $"Blizzard-Daten: {totalBlizzard} Quests\n" +
+                    $"AzerothCore-Daten: {totalAcore} Quests",
+                    "Merged laden",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // Cache aktualisieren
+                SaveQuestsToCache();
+
+                // Sortierung anwenden
+                ApplyDefaultQuestSorting();
+
+                // Dispose Sources
+                if (acoreSource is IDisposable disposable)
+                    disposable.Dispose();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler beim Merged-Laden:\n{ex.Message}",
+                    "Merge-Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = $"Merge-Fehler: {ex.Message}";
+            }
+            finally
+            {
+                FetchFromBlizzardButton.IsEnabled = true;
+                LoadFromSqliteButton.IsEnabled = true;
+                LoadMergedButton.IsEnabled = true;
+            }
         }
 
         private void OnImportJsonClick(object sender, RoutedEventArgs e)
@@ -492,7 +792,12 @@ namespace WowQuestTtsTool
                 ApplyDefaultQuestSorting();
                 PopulateZoneFilter();
                 PopulateCategoryFilter();
-                PopulateZoneLoadComboBox(); // NEU: Zone-Lade-ComboBox befuellen
+                PopulateZoneLoadComboBox();
+
+                // WICHTIG: Blizzard-Daten in SEPARATEN Cache speichern (wird nicht ueberschrieben)
+                SaveBlizzardCache(quests);
+
+                // Auch in den normalen Cache speichern (fuer UI-Wiederherstellung)
                 SaveQuestsToCache();
 
                 StatusText.Text = $"Fertig: {Quests.Count} Quests von Blizzard geladen.";
@@ -913,19 +1218,15 @@ namespace WowQuestTtsTool
             {
                 var updateWindow = new UpdateSyncWindow(Quests, _exportSettings)
                 {
-                    Owner = this
-                };
-
-                // TTS-Generierungs-Delegate setzen
-                updateWindow.GenerateTtsForQuestAsync = async (quest, languageCode, ct) =>
-                {
-                    return await GenerateTtsForUpdateSyncAsync(quest, ct);
-                };
-
-                // Addon-Export-Delegate setzen
-                updateWindow.ExportAddonAsync = async (ct) =>
-                {
-                    return await ExportAddonInternalAsync(ct);
+                    Owner = this,
+                    GenerateTtsForQuestAsync = async (quest, languageCode, ct) =>
+                    {
+                        return await GenerateTtsForUpdateSyncAsync(quest, ct);
+                    },
+                    ExportAddonAsync = async (ct) =>
+                    {
+                        return await ExportAddonInternalAsync(ct);
+                    }
                 };
 
                 updateWindow.ShowDialog();
@@ -1597,6 +1898,19 @@ namespace WowQuestTtsTool
         }
 
         /// <summary>
+        /// Ermittelt die ausgewaehlte Stimmen-Option aus der ComboBox.
+        /// </summary>
+        /// <returns>"both", "male" oder "female"</returns>
+        private string GetSelectedVoiceOption()
+        {
+            if (VoiceSelectionCombo.SelectedItem is ComboBoxItem selected)
+            {
+                return selected.Tag?.ToString() ?? "both";
+            }
+            return "both";
+        }
+
+        /// <summary>
         /// Generiert TTS fuer eine einzelne ausgewaehlte Quest (Button-Handler).
         /// </summary>
         private async void OnGenerateSingleTtsClick(object sender, RoutedEventArgs e)
@@ -1633,6 +1947,11 @@ namespace WowQuestTtsTool
                 return;
             }
 
+            // Ausgewaehlte Stimmen-Option ermitteln
+            var voiceOption = GetSelectedVoiceOption();
+            bool generateMale = voiceOption == "both" || voiceOption == "male";
+            bool generateFemale = voiceOption == "both" || voiceOption == "female";
+
             // Pruefen ob diese Quest bereits vertont ist (ueber Audio-Index)
             var audioIndex = AudioIndexWriter.LoadIndex(_exportSettings.OutputRootPath, _exportSettings.LanguageCode);
             var audioLookup = AudioIndexWriter.BuildLookupDictionary(audioIndex);
@@ -1640,12 +1959,15 @@ namespace WowQuestTtsTool
             bool maleExists = AudioIndexWriter.IsAlreadyVoiced(audioLookup, SelectedQuest.QuestId, "male");
             bool femaleExists = AudioIndexWriter.IsAlreadyVoiced(audioLookup, SelectedQuest.QuestId, "female");
 
-            if (maleExists || femaleExists)
+            // Nur relevante existierende Stimmen pruefen
+            bool relevantExists = (generateMale && maleExists) || (generateFemale && femaleExists);
+
+            if (relevantExists)
             {
                 // Bestehende Vertonungen - Benutzer fragen ob ueberschreiben
                 var existingVoices = new List<string>();
-                if (maleExists) existingVoices.Add("Maennlich");
-                if (femaleExists) existingVoices.Add("Weiblich");
+                if (generateMale && maleExists) existingVoices.Add("Maennlich");
+                if (generateFemale && femaleExists) existingVoices.Add("Weiblich");
 
                 var confirmResult = MessageBox.Show(
                     $"Quest {SelectedQuest.QuestId} hat bereits Audio-Dateien:\n" +
@@ -1666,11 +1988,14 @@ namespace WowQuestTtsTool
             try
             {
                 GenerateSingleTtsButton.IsEnabled = false;
+                VoiceSelectionCombo.IsEnabled = false;
                 TtsProgressPanel.Visibility = Visibility.Visible;
                 TtsProgressBar.Value = 0;
-                TtsProgressText.Text = "0/2";
 
-                var result = await GenerateTtsForQuestAsync(SelectedQuest);
+                int totalVoices = (generateMale ? 1 : 0) + (generateFemale ? 1 : 0);
+                TtsProgressText.Text = $"0/{totalVoices}";
+
+                var result = await GenerateTtsForQuestAsync(SelectedQuest, default, generateMale, generateFemale);
 
                 TtsProgressPanel.Visibility = Visibility.Collapsed;
 
@@ -1684,11 +2009,21 @@ namespace WowQuestTtsTool
                     CheckExistingAudio();
                     SaveQuestsToCache();
 
-                    StatusText.Text = $"TTS fuer Quest {SelectedQuest.QuestId} generiert (M+W)";
+                    var voiceInfo = voiceOption switch
+                    {
+                        "male" => "M",
+                        "female" => "W",
+                        _ => "M+W"
+                    };
+                    StatusText.Text = $"TTS fuer Quest {SelectedQuest.QuestId} generiert ({voiceInfo})";
+
+                    var resultMsg = new List<string>();
+                    if (generateMale) resultMsg.Add($"Maennliche Stimme: {(result.MaleGenerated ? "OK" : "Uebersprungen")}");
+                    if (generateFemale) resultMsg.Add($"Weibliche Stimme: {(result.FemaleGenerated ? "OK" : "Uebersprungen")}");
+
                     MessageBox.Show(
                         $"TTS erfolgreich generiert fuer Quest {SelectedQuest.QuestId}!\n\n" +
-                        $"Maennliche Stimme: {(result.MaleGenerated ? "OK" : "Uebersprungen")}\n" +
-                        $"Weibliche Stimme: {(result.FemaleGenerated ? "OK" : "Uebersprungen")}",
+                        string.Join("\n", resultMsg),
                         "TTS generiert",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }
@@ -1704,6 +2039,7 @@ namespace WowQuestTtsTool
             finally
             {
                 GenerateSingleTtsButton.IsEnabled = true;
+                VoiceSelectionCombo.IsEnabled = true;
                 TtsProgressPanel.Visibility = Visibility.Collapsed;
             }
         }
@@ -1720,10 +2056,18 @@ namespace WowQuestTtsTool
         }
 
         /// <summary>
-        /// Generiert TTS fuer eine einzelne Quest (maennlich + weiblich).
+        /// Generiert TTS fuer eine einzelne Quest.
         /// Gemeinsame Helper-Methode fuer Einzel- und Batch-Verarbeitung.
         /// </summary>
-        private async Task<TtsGenerationResult> GenerateTtsForQuestAsync(Quest quest, CancellationToken cancellationToken = default)
+        /// <param name="quest">Die Quest fuer die TTS generiert werden soll</param>
+        /// <param name="cancellationToken">Abbruch-Token</param>
+        /// <param name="generateMale">True = maennliche Stimme generieren</param>
+        /// <param name="generateFemale">True = weibliche Stimme generieren</param>
+        private async Task<TtsGenerationResult> GenerateTtsForQuestAsync(
+            Quest quest,
+            CancellationToken cancellationToken = default,
+            bool generateMale = true,
+            bool generateFemale = true)
         {
             var result = new TtsGenerationResult();
 
@@ -1739,20 +2083,31 @@ namespace WowQuestTtsTool
                 var malePath = _exportSettings.GetMaleOutputPath(quest);
                 var femalePath = _exportSettings.GetFemaleOutputPath(quest);
 
-                var maleFolder = Path.GetDirectoryName(malePath);
-                var femaleFolder = Path.GetDirectoryName(femalePath);
-                if (!string.IsNullOrEmpty(maleFolder)) Directory.CreateDirectory(maleFolder);
-                if (!string.IsNullOrEmpty(femaleFolder)) Directory.CreateDirectory(femaleFolder);
+                if (generateMale)
+                {
+                    var maleFolder = Path.GetDirectoryName(malePath);
+                    if (!string.IsNullOrEmpty(maleFolder)) Directory.CreateDirectory(maleFolder);
+                }
+                if (generateFemale)
+                {
+                    var femaleFolder = Path.GetDirectoryName(femalePath);
+                    if (!string.IsNullOrEmpty(femaleFolder)) Directory.CreateDirectory(femaleFolder);
+                }
 
                 int voicesGenerated = 0;
+                int totalVoices = (generateMale ? 1 : 0) + (generateFemale ? 1 : 0);
+                int currentVoice = 0;
 
                 // Maennliche Stimme
-                if (!quest.HasMaleTts || !File.Exists(malePath))
+                if (generateMale)
                 {
+                    currentVoice++;
+                    int progressPercent = totalVoices == 1 ? 50 : 25;
+
                     Dispatcher.Invoke(() =>
                     {
-                        TtsProgressBar.Value = 25;
-                        TtsProgressText.Text = "1/2 (M)";
+                        TtsProgressBar.Value = progressPercent;
+                        TtsProgressText.Text = $"{currentVoice}/{totalVoices} (M)";
                         StatusText.Text = $"Quest {quest.QuestId}: Generiere maennliche Stimme...";
                     });
 
@@ -1764,12 +2119,15 @@ namespace WowQuestTtsTool
                 }
 
                 // Weibliche Stimme
-                if (!quest.HasFemaleTts || !File.Exists(femalePath))
+                if (generateFemale)
                 {
+                    currentVoice++;
+                    int progressPercent = totalVoices == 1 ? 50 : 75;
+
                     Dispatcher.Invoke(() =>
                     {
-                        TtsProgressBar.Value = 75;
-                        TtsProgressText.Text = "2/2 (W)";
+                        TtsProgressBar.Value = progressPercent;
+                        TtsProgressText.Text = $"{currentVoice}/{totalVoices} (W)";
                         StatusText.Text = $"Quest {quest.QuestId}: Generiere weibliche Stimme...";
                     });
 
@@ -1794,7 +2152,7 @@ namespace WowQuestTtsTool
                 Dispatcher.Invoke(() =>
                 {
                     TtsProgressBar.Value = 100;
-                    TtsProgressText.Text = "2/2";
+                    TtsProgressText.Text = $"{totalVoices}/{totalVoices}";
                 });
             }
             catch (OperationCanceledException)
@@ -3844,6 +4202,105 @@ namespace WowQuestTtsTool
                 TextKiProviderText.Text = "Fehler bei Initialisierung";
             }
         }
+
+        #region Update System
+
+        /// <summary>
+        /// Initialisiert den Update-Manager und startet Auto-Check.
+        /// </summary>
+        private void InitializeUpdateManager()
+        {
+            // Event-Handler fuer Update-Verfuegbarkeit
+            _updateManager.UpdateAvailable += UpdateManager_UpdateAvailable;
+            _updateManager.ErrorOccurred += UpdateManager_ErrorOccurred;
+
+            // Auto-Check beim Start (asynchron, leise)
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(2000); // 2 Sekunden warten bis UI geladen
+                await _updateManager.CheckForUpdatesOnStartupAsync();
+            });
+        }
+
+        /// <summary>
+        /// Wird aufgerufen, wenn ein Update verfuegbar ist.
+        /// </summary>
+        private void UpdateManager_UpdateAvailable(object? sender, UpdateManifest manifest)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                // Update-Badge anzeigen
+                UpdateBadge.Visibility = Visibility.Visible;
+                UpdateButton.Background = new SolidColorBrush(Color.FromRgb(76, 175, 80)); // Gruen
+                UpdateButton.ToolTip = $"Neue Version {manifest.LatestVersion} verfuegbar!";
+            });
+        }
+
+        /// <summary>
+        /// Wird aufgerufen, wenn ein Fehler beim Update-Check auftritt.
+        /// </summary>
+        private void UpdateManager_ErrorOccurred(object? sender, string errorMessage)
+        {
+            // Fehler nur im Debug-Modus anzeigen
+            System.Diagnostics.Debug.WriteLine($"Update-Fehler: {errorMessage}");
+        }
+
+        /// <summary>
+        /// Click-Handler fuer den Update-Button.
+        /// </summary>
+        private async void OnCheckUpdatesClick(object sender, RoutedEventArgs e)
+        {
+            // Wenn Update verfuegbar, Dialog anzeigen
+            if (_updateManager.IsUpdateAvailable && _updateManager.AvailableUpdate != null)
+            {
+                await _updateManager.ShowUpdateDialogAsync(this);
+                return;
+            }
+
+            // Sonst: Nach Updates suchen
+            UpdateButton.IsEnabled = false;
+            UpdateButton.Content = "Pruefe...";
+
+            try
+            {
+                await _updateManager.CheckForUpdatesAsync(showNoUpdateMessage: true);
+
+                if (_updateManager.IsUpdateAvailable && _updateManager.AvailableUpdate != null)
+                {
+                    await _updateManager.ShowUpdateDialogAsync(this);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Sie verwenden bereits die neueste Version ({AppVersionHelper.GetCurrentVersionString()}).",
+                        "Kein Update verfuegbar",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler bei der Update-Pruefung:\n{ex.Message}",
+                    "Update-Fehler",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                UpdateButton.IsEnabled = true;
+                UpdateButton.Content = "Updates";
+
+                // Badge zuruecksetzen wenn kein Update
+                if (!_updateManager.IsUpdateAvailable)
+                {
+                    UpdateBadge.Visibility = Visibility.Collapsed;
+                    UpdateButton.Background = new SolidColorBrush(Color.FromRgb(96, 125, 139)); // Grau
+                }
+            }
+        }
+
+        #endregion
 
         /// <summary>
         /// Event-Handler fuer den "Text glaetten (LLM)" Button.

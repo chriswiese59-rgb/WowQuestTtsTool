@@ -28,12 +28,14 @@
   },
   "voice_profiles": {
     "neutral_female": {
-      "voice_id": "pNInz6obpgDQGcFmaJgB",
-      "description": "Adam - Neutral männlich"
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "description": "Bella - Neutral weiblich",
+      "gender": "female"
     },
     "neutral_male": {
       "voice_id": "ErXwobaYiN019PkySvjV",
-      "description": "Antoni - Neutral männlich"
+      "description": "Antoni - Neutral männlich",
+      "gender": "male"
     },
     "epic_narrator": {
       "voice_id": "VR6AewLTigWG4xSOukaG",
