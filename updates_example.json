@@ -1,0 +1,10 @@
+{
+  "latestVersion": "1.1.0",
+  "downloadUrl": "https://example.com/wowquesttts/WowQuestTtsTool-1.1.0.zip",
+  "changelog": "Version 1.1.0:\\n\\n• Neue Stimmen-Auswahl (Maennlich/Weiblich/Beide)\\n• Verbesserter TTS-Workflow\\n• Bugfixes beim Audio-Export\\n• Auto-Update System hinzugefuegt",
+  "mandatory": false,
+  "fileHash": "",
+  "minVersion": "1.0.0",
+  "releaseDate": "2024-12-12",
+  "fileSize": 52428800
+}
