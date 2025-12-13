@@ -31,6 +31,16 @@ namespace WowQuestTtsTool.Services
         private decimal _costPer1kTokens = 0.30m;
         private string _currencySymbol = "€";
 
+        // SQLite Quest-Datenbank (AzerothCore)
+        private string _sqliteDatabasePath = "";
+        private bool _useSqliteDatabase = false;
+
+        // Blizzard JSON-Datei
+        private string _blizzardJsonPath = "";
+
+        // Merged Repository aktivieren
+        private bool _useMergedRepository = false;
+
         static TtsExportSettings()
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -222,6 +232,75 @@ namespace WowQuestTtsTool.Services
                 {
                     _currencySymbol = value ?? "€";
                     OnPropertyChanged(nameof(CurrencySymbol));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Pfad zur SQLite Quest-Datenbank.
+        /// </summary>
+        [JsonPropertyName("sqlite_database_path")]
+        public string SqliteDatabasePath
+        {
+            get => _sqliteDatabasePath;
+            set
+            {
+                if (_sqliteDatabasePath != value)
+                {
+                    _sqliteDatabasePath = value ?? "";
+                    OnPropertyChanged(nameof(SqliteDatabasePath));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gibt an, ob SQLite statt JSON/Blizzard verwendet werden soll.
+        /// </summary>
+        [JsonPropertyName("use_sqlite_database")]
+        public bool UseSqliteDatabase
+        {
+            get => _useSqliteDatabase;
+            set
+            {
+                if (_useSqliteDatabase != value)
+                {
+                    _useSqliteDatabase = value;
+                    OnPropertyChanged(nameof(UseSqliteDatabase));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Pfad zur Blizzard JSON-Datei.
+        /// </summary>
+        [JsonPropertyName("blizzard_json_path")]
+        public string BlizzardJsonPath
+        {
+            get => _blizzardJsonPath;
+            set
+            {
+                if (_blizzardJsonPath != value)
+                {
+                    _blizzardJsonPath = value ?? "";
+                    OnPropertyChanged(nameof(BlizzardJsonPath));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gibt an, ob das Merged Repository verwendet werden soll.
+        /// Kombiniert Blizzard-Daten mit AzerothCore-Daten.
+        /// </summary>
+        [JsonPropertyName("use_merged_repository")]
+        public bool UseMergedRepository
+        {
+            get => _useMergedRepository;
+            set
+            {
+                if (_useMergedRepository != value)
+                {
+                    _useMergedRepository = value;
+                    OnPropertyChanged(nameof(UseMergedRepository));
                 }
             }
         }

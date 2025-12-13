@@ -5,6 +5,58 @@ using System.Text.Json.Serialization;
 
 namespace WowQuestTtsTool
 {
+    /// <summary>
+    /// Status einer Quest im Bearbeitungs-Workflow.
+    /// </summary>
+    public enum QuestWorkflowStatus
+    {
+        /// <summary>
+        /// Quest ist offen und noch nicht bearbeitet.
+        /// </summary>
+        Open = 0,
+
+        /// <summary>
+        /// Quest wird gerade bearbeitet.
+        /// </summary>
+        InProgress = 1,
+
+        /// <summary>
+        /// Quest ist fertig bearbeitet und abgeschlossen.
+        /// </summary>
+        Completed = 2
+    }
+
+    /// <summary>
+    /// Herkunft eines Quest-Textfeldes.
+    /// </summary>
+    public enum QuestTextSource
+    {
+        /// <summary>
+        /// Keine Quelle/unbekannt.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// Text stammt aus der Blizzard-API.
+        /// </summary>
+        Blizzard = 1,
+
+        /// <summary>
+        /// Text stammt aus AzerothCore-Datenbank.
+        /// </summary>
+        AzerothCore = 2,
+
+        /// <summary>
+        /// Text wurde manuell vom Benutzer eingegeben/ueberschrieben.
+        /// </summary>
+        Manual = 3,
+
+        /// <summary>
+        /// Text wurde von KI korrigiert.
+        /// </summary>
+        AiCorrected = 4
+    }
+
     public class Quest
     {
         [JsonPropertyName("quest_id")]
@@ -55,6 +107,35 @@ namespace WowQuestTtsTool
         /// </summary>
         [JsonPropertyName("quest_type")]
         public string? QuestType { get; set; }
+
+        // === Datenquellen-Tracking ===
+
+        /// <summary>
+        /// Gibt an, ob diese Quest Daten aus der Blizzard-API hat.
+        /// </summary>
+        [JsonPropertyName("has_blizzard_source")]
+        public bool HasBlizzardSource { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob diese Quest Daten aus AzerothCore hat.
+        /// </summary>
+        [JsonPropertyName("has_acore_source")]
+        public bool HasAcoreSource { get; set; }
+
+        /// <summary>
+        /// Kurzbezeichnung der Datenquelle(n) fuer UI.
+        /// </summary>
+        [JsonIgnore]
+        public string SourceDisplayName
+        {
+            get
+            {
+                if (HasBlizzardSource && HasAcoreSource) return "Blizz+AC";
+                if (HasBlizzardSource) return "Blizzard";
+                if (HasAcoreSource) return "ACore";
+                return "?";
+            }
+        }
 
         /// <summary>
         /// Anzeigename der Kategorie (für UI-Binding).
@@ -194,9 +275,277 @@ namespace WowQuestTtsTool
         [JsonIgnore]
         public string LocalizationStatusDisplayName => LocalizationStatus.ToDisplayName();
 
+        // === RewardText (Text bei Quest-Abgabe aus quest_offer_reward_locale) ===
+        // HINWEIS: In AzerothCore heisst das Feld "RewardText", wird aber bei Quest-ABSCHLUSS angezeigt
+        // (vor der Belohnung). Das ist NICHT der Belohnungstext, sondern der Abschluss-Dialog.
+
+        /// <summary>
+        /// Der aktive Belohnungstext fuer TTS (nach Korrektur/Ueberschreibung).
+        /// Aus quest_offer_reward_locale.RewardText - Text bei Quest-Abgabe.
+        /// </summary>
+        [JsonPropertyName("reward_text")]
+        public string? RewardText { get; set; }
+
+        /// <summary>
+        /// Original-Belohnungstext aus der Datenbank (unveraendert).
+        /// </summary>
+        [JsonPropertyName("original_reward_text")]
+        public string? OriginalRewardText { get; set; }
+
+        /// <summary>
+        /// Herkunft des aktuellen RewardText.
+        /// </summary>
+        [JsonPropertyName("reward_text_source")]
+        public QuestTextSource RewardTextSource { get; set; } = QuestTextSource.None;
+
+        /// <summary>
+        /// Gibt an, ob der RewardText manuell ueberschrieben wurde.
+        /// </summary>
+        [JsonPropertyName("is_reward_text_overridden")]
+        public bool IsRewardTextOverridden { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob ein RewardText vorhanden ist (Original oder ueberschrieben).
+        /// </summary>
+        [JsonIgnore]
+        public bool HasRewardText => !string.IsNullOrWhiteSpace(RewardText) || !string.IsNullOrWhiteSpace(OriginalRewardText);
+
+        /// <summary>
+        /// Gibt den effektiven RewardText zurueck (ueberschrieben oder Original).
+        /// </summary>
+        [JsonIgnore]
+        public string EffectiveRewardText => !string.IsNullOrWhiteSpace(RewardText) ? RewardText : (OriginalRewardText ?? string.Empty);
+
+        /// <summary>
+        /// Setzt den RewardText aus einer Datenquelle.
+        /// </summary>
+        /// <param name="text">Der Text</param>
+        /// <param name="source">Die Quelle (Blizzard, AzerothCore)</param>
+        public void SetRewardTextFromSource(string? text, QuestTextSource source)
+        {
+            OriginalRewardText = text;
+            RewardTextSource = source;
+            // RewardText nur setzen, wenn noch nicht manuell ueberschrieben
+            if (!IsRewardTextOverridden)
+            {
+                RewardText = text;
+            }
+        }
+
+        /// <summary>
+        /// Ueberschreibt den RewardText manuell.
+        /// </summary>
+        /// <param name="text">Der neue Text</param>
+        /// <param name="isAiCorrected">True wenn KI-korrigiert</param>
+        public void OverrideRewardText(string? text, bool isAiCorrected = false)
+        {
+            RewardText = text;
+            IsRewardTextOverridden = true;
+            RewardTextSource = isAiCorrected ? QuestTextSource.AiCorrected : QuestTextSource.Manual;
+        }
+
+        /// <summary>
+        /// Setzt den RewardText auf das Original zurueck.
+        /// </summary>
+        public void ResetRewardTextToOriginal()
+        {
+            RewardText = OriginalRewardText;
+            IsRewardTextOverridden = false;
+            // Source bleibt (zeigt Original-Quelle)
+            if (!string.IsNullOrWhiteSpace(OriginalRewardText))
+            {
+                // Quelle basierend auf vorhandenen Daten bestimmen
+                RewardTextSource = HasAcoreSource ? QuestTextSource.AzerothCore :
+                                   HasBlizzardSource ? QuestTextSource.Blizzard :
+                                   QuestTextSource.None;
+            }
+        }
+
+        // === RequestItemsText (Text wenn Quest-Items fehlen aus quest_request_items_locale) ===
+
+        /// <summary>
+        /// Text der angezeigt wird wenn Quest-Items noch fehlen.
+        /// Aus quest_request_items_locale.CompletionText.
+        /// </summary>
+        [JsonPropertyName("request_items_text")]
+        public string? RequestItemsText { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob ein RequestItemsText vorhanden ist.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasRequestItemsText => !string.IsNullOrWhiteSpace(RequestItemsText);
+
+        // === Kompatibilitaets-Aliase fuer alten Code ===
+
+        /// <summary>
+        /// Alias fuer RewardText (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public string? CompletionText
+        {
+            get => RewardText;
+            set => RewardText = value;
+        }
+
+        /// <summary>
+        /// Alias fuer OriginalRewardText (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public string? OriginalCompletionText
+        {
+            get => OriginalRewardText;
+            set => OriginalRewardText = value;
+        }
+
+        /// <summary>
+        /// Alias fuer RewardTextSource (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public QuestTextSource CompletionTextSource
+        {
+            get => RewardTextSource;
+            set => RewardTextSource = value;
+        }
+
+        /// <summary>
+        /// Alias fuer IsRewardTextOverridden (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public bool IsCompletionTextOverridden
+        {
+            get => IsRewardTextOverridden;
+            set => IsRewardTextOverridden = value;
+        }
+
+        /// <summary>
+        /// Alias fuer HasRewardText (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public bool HasCompletionText => HasRewardText;
+
+        /// <summary>
+        /// Alias fuer EffectiveRewardText (Kompatibilitaet).
+        /// </summary>
+        [JsonIgnore]
+        public string EffectiveCompletionText => EffectiveRewardText;
+
+        /// <summary>
+        /// Alias fuer SetRewardTextFromSource (Kompatibilitaet).
+        /// </summary>
+        public void SetCompletionTextFromSource(string? text, QuestTextSource source) => SetRewardTextFromSource(text, source);
+
+        /// <summary>
+        /// Alias fuer OverrideRewardText (Kompatibilitaet).
+        /// </summary>
+        public void OverrideCompletionText(string? text, bool isAiCorrected = false) => OverrideRewardText(text, isAiCorrected);
+
+        /// <summary>
+        /// Alias fuer ResetRewardTextToOriginal (Kompatibilitaet).
+        /// </summary>
+        public void ResetCompletionTextToOriginal() => ResetRewardTextToOriginal();
+
         // Flag für TTS-Review
         [JsonPropertyName("tts_reviewed")]
         public bool TtsReviewed { get; set; }
+
+        // === Workflow-Status (Open/InProgress/Completed) ===
+
+        /// <summary>
+        /// Workflow-Status der Quest (Open, InProgress, Completed).
+        /// </summary>
+        [JsonPropertyName("workflow_status")]
+        public QuestWorkflowStatus WorkflowStatus { get; set; } = QuestWorkflowStatus.Open;
+
+        /// <summary>
+        /// Gibt an, ob die Quest gesperrt ist.
+        /// Gesperrte Quests koennen nicht mehr bearbeitet werden.
+        /// </summary>
+        [JsonPropertyName("is_locked")]
+        public bool IsLocked { get; set; }
+
+        /// <summary>
+        /// Zeitpunkt wann die Quest als erledigt markiert wurde.
+        /// </summary>
+        [JsonPropertyName("completed_at")]
+        public DateTime? CompletedAt { get; set; }
+
+        /// <summary>
+        /// Zeitpunkt wann die Quest in Bearbeitung genommen wurde.
+        /// </summary>
+        [JsonPropertyName("started_at")]
+        public DateTime? StartedAt { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob die Quest als erledigt markiert wurde (Completed).
+        /// Kompatibilitaets-Property fuer bestehenden Code.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsCompleted => WorkflowStatus == QuestWorkflowStatus.Completed;
+
+        /// <summary>
+        /// Gibt an, ob die Quest offen ist (noch nicht bearbeitet).
+        /// </summary>
+        [JsonIgnore]
+        public bool IsOpen => WorkflowStatus == QuestWorkflowStatus.Open;
+
+        /// <summary>
+        /// Gibt an, ob die Quest in Bearbeitung ist.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsInProgress => WorkflowStatus == QuestWorkflowStatus.InProgress;
+
+        /// <summary>
+        /// Gibt an, ob die Quest bearbeitbar ist (nicht Completed und nicht Locked).
+        /// </summary>
+        [JsonIgnore]
+        public bool IsEditable => WorkflowStatus != QuestWorkflowStatus.Completed && !IsLocked;
+
+        /// <summary>
+        /// Setzt die Quest auf "In Bearbeitung".
+        /// </summary>
+        public void StartProgress()
+        {
+            if (WorkflowStatus == QuestWorkflowStatus.Completed && IsLocked)
+                return; // Gesperrte Completed-Quests nicht aendern
+
+            WorkflowStatus = QuestWorkflowStatus.InProgress;
+            StartedAt ??= DateTime.Now;
+        }
+
+        /// <summary>
+        /// Markiert die Quest als erledigt und sperrt sie.
+        /// </summary>
+        public void MarkAsCompleted()
+        {
+            WorkflowStatus = QuestWorkflowStatus.Completed;
+            IsLocked = true;
+            CompletedAt = DateTime.Now;
+        }
+
+        /// <summary>
+        /// Entsperrt die Quest wieder fuer Bearbeitung.
+        /// Setzt den Status auf InProgress zurueck.
+        /// </summary>
+        public void Unlock()
+        {
+            IsLocked = false;
+            if (WorkflowStatus == QuestWorkflowStatus.Completed)
+            {
+                WorkflowStatus = QuestWorkflowStatus.InProgress;
+            }
+        }
+
+        /// <summary>
+        /// Setzt den Status komplett zurueck auf Open.
+        /// </summary>
+        public void ResetToOpen()
+        {
+            WorkflowStatus = QuestWorkflowStatus.Open;
+            IsLocked = false;
+            CompletedAt = null;
+            StartedAt = null;
+        }
 
         // Benutzerdefinierter TTS-Text (überschreibt automatisch generierten Text)
         [JsonPropertyName("custom_tts_text")]
@@ -325,8 +674,17 @@ namespace WowQuestTtsTool
                 if (!string.IsNullOrWhiteSpace(Objectives))
                     parts.Add($"Ziele: {Objectives}");
 
-                if (!string.IsNullOrWhiteSpace(Completion))
-                    parts.Add($"Abschluss: {Completion}");
+                // ACHTUNG: DB-Felder sind vertauscht!
+                // RewardText (quest_offer_reward_locale) enthaelt den ABSCHLUSS-Text
+                // Completion (quest_template_locale) enthaelt den BELOHNUNGS-Text
+
+                // Zuerst Abschluss (aus RewardText)
+                if (!string.IsNullOrWhiteSpace(EffectiveRewardText))
+                    parts.Add($"Abschluss: {EffectiveRewardText}");
+
+                // Dann Belohnung (aus Completion)
+                if (!string.IsNullOrWhiteSpace(Completion) && Completion != EffectiveRewardText)
+                    parts.Add($"Belohnung: {Completion}");
 
                 return string.Join(". ", parts);
             }
@@ -351,8 +709,17 @@ namespace WowQuestTtsTool
                 if (!string.IsNullOrWhiteSpace(Objectives))
                     parts.Add($"Ziele: {Objectives}");
 
-                if (!string.IsNullOrWhiteSpace(Completion))
-                    parts.Add($"Abschluss: {Completion}");
+                // ACHTUNG: DB-Felder sind vertauscht!
+                // RewardText (quest_offer_reward_locale) enthaelt den ABSCHLUSS-Text
+                // Completion (quest_template_locale) enthaelt den BELOHNUNGS-Text
+
+                // Zuerst Abschluss (aus RewardText)
+                if (!string.IsNullOrWhiteSpace(EffectiveRewardText))
+                    parts.Add($"Abschluss: {EffectiveRewardText}");
+
+                // Dann Belohnung (aus Completion)
+                if (!string.IsNullOrWhiteSpace(Completion) && Completion != EffectiveRewardText)
+                    parts.Add($"Belohnung: {Completion}");
 
                 return string.Join(". ", parts);
             }
@@ -363,5 +730,87 @@ namespace WowQuestTtsTool
         /// </summary>
         [JsonIgnore]
         public bool HasCustomTtsText => !string.IsNullOrWhiteSpace(CustomTtsText);
+
+        // === Audio-Index Properties (vom AudioIndexService gesetzt) ===
+
+        /// <summary>
+        /// Gibt an, ob im Audio-Index mindestens eine Audio-Datei fuer diese Quest existiert.
+        /// Wird vom AudioIndexService beim Scan gesetzt.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasAudioFromIndex { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob im Audio-Index eine maennliche Audio-Datei existiert.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasMaleAudioFromIndex { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob im Audio-Index eine weibliche Audio-Datei existiert.
+        /// </summary>
+        [JsonIgnore]
+        public bool HasFemaleAudioFromIndex { get; set; }
+
+        /// <summary>
+        /// Pfad zur maennlichen Audio-Datei aus dem Index.
+        /// </summary>
+        [JsonIgnore]
+        public string? MaleAudioPathFromIndex { get; set; }
+
+        /// <summary>
+        /// Pfad zur weiblichen Audio-Datei aus dem Index.
+        /// </summary>
+        [JsonIgnore]
+        public string? FemaleAudioPathFromIndex { get; set; }
+
+        /// <summary>
+        /// Zeitstempel der letzten Audio-Aenderung aus dem Index.
+        /// </summary>
+        [JsonIgnore]
+        public DateTime? AudioLastModifiedFromIndex { get; set; }
+
+        /// <summary>
+        /// Gibt an, ob die Quest als "offen" gilt (noch nicht vertont).
+        /// Eine Quest ist offen, wenn sie keine Audio im Index hat.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsOpenForVoicing => !HasAudioFromIndex;
+
+        /// <summary>
+        /// Gibt an, ob die Quest vollstaendig vertont ist (Male + Female vorhanden).
+        /// </summary>
+        [JsonIgnore]
+        public bool IsFullyVoiced => HasMaleAudioFromIndex && HasFemaleAudioFromIndex;
+
+        /// <summary>
+        /// Aktualisiert die Audio-Index-Properties basierend auf einem AudioIndexEntry.
+        /// </summary>
+        public void UpdateFromAudioIndex(WowQuestTtsTool.Services.AudioIndexEntry? entry)
+        {
+            if (entry == null)
+            {
+                HasAudioFromIndex = false;
+                HasMaleAudioFromIndex = false;
+                HasFemaleAudioFromIndex = false;
+                MaleAudioPathFromIndex = null;
+                FemaleAudioPathFromIndex = null;
+                AudioLastModifiedFromIndex = null;
+            }
+            else
+            {
+                HasAudioFromIndex = entry.HasAnyAudio;
+                HasMaleAudioFromIndex = entry.HasMaleAudio;
+                HasFemaleAudioFromIndex = entry.HasFemaleAudio;
+                MaleAudioPathFromIndex = entry.MaleAudioPath;
+                FemaleAudioPathFromIndex = entry.FemaleAudioPath;
+                AudioLastModifiedFromIndex = entry.LastModified;
+
+                // Legacy-Flags synchronisieren fuer Kompatibilitaet
+                HasMaleTts = entry.HasMaleAudio;
+                HasFemaleTts = entry.HasFemaleAudio;
+                HasTtsAudio = entry.HasMaleAudio && entry.HasFemaleAudio;
+            }
+        }
     }
 }

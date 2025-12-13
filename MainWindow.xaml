@@ -271,6 +271,58 @@
                     <ComboBoxItem Content="Nicht leer" Tag="not_incomplete"/>
                 </ComboBox>
 
+                <!-- Workflow-Status Filter -->
+                <TextBlock Text="Status:" VerticalAlignment="Center" Margin="0,0,4,0" FontWeight="SemiBold" Foreground="#673AB7"/>
+                <ComboBox x:Name="WorkflowFilterComboBox"
+                          Width="120"
+                          Margin="0,0,8,0"
+                          VerticalAlignment="Center"
+                          SelectedIndex="4"
+                          SelectionChanged="WorkflowFilterComboBox_SelectionChanged"
+                          ToolTip="Filtert nach Workflow-Status">
+                    <ComboBoxItem Content="Offen + In Arbeit" Tag="active"/>
+                    <ComboBoxItem Content="Nur offen" Tag="open_only"/>
+                    <ComboBoxItem Content="In Bearbeitung" Tag="in_progress"/>
+                    <ComboBoxItem Content="Abgeschlossen" Tag="completed"/>
+                    <ComboBoxItem Content="Alle" Tag="all" IsSelected="True"/>
+                </ComboBox>
+
+                <!-- Audio-Status Filter -->
+                <TextBlock Text="Audio:" VerticalAlignment="Center" Margin="0,0,4,0" FontWeight="SemiBold" Foreground="#9C27B0"/>
+                <ComboBox x:Name="VoicedFilterComboBox"
+                          Width="100"
+                          Margin="0,0,8,0"
+                          VerticalAlignment="Center"
+                          SelectedIndex="4"
+                          SelectionChanged="VoicedFilterComboBox_SelectionChanged"
+                          ToolTip="Filtert nach Audio-Status">
+                    <ComboBoxItem Content="Nicht vertont" Tag="not_voiced"/>
+                    <ComboBoxItem Content="Vertont" Tag="voiced"/>
+                    <ComboBoxItem Content="Vollstaendig" Tag="voiced_complete"/>
+                    <ComboBoxItem Content="Teilweise" Tag="voiced_incomplete"/>
+                    <ComboBoxItem Content="Alle" Tag="all" IsSelected="True"/>
+                </ComboBox>
+
+                <!-- Audio-Scan Button -->
+                <Button x:Name="RefreshAudioIndexButton"
+                        Content="Scan"
+                        Width="50"
+                        Height="22"
+                        Margin="0,0,8,0"
+                        Click="OnRefreshAudioIndexClick"
+                        Background="#673AB7"
+                        Foreground="White"
+                        ToolTip="Audio-Ordner neu scannen"/>
+
+                <!-- Audio-Index Statistik -->
+                <TextBlock x:Name="AudioIndexStatsText"
+                           Text="{Binding AudioIndexStats}"
+                           VerticalAlignment="Center"
+                           Foreground="#673AB7"
+                           FontSize="11"
+                           Margin="0,0,12,0"
+                           ToolTip="Anzahl vertonter / offener Quests"/>
+
                 <!-- TTS-Status Filter -->
                 <TextBlock Text="TTS:" VerticalAlignment="Center" Margin="0,0,4,0"/>
                 <ComboBox x:Name="TtsStatusFilterComboBox"
@@ -525,17 +577,38 @@
                               Margin="8,0,8,0"
                               ToolTip="Wenn aktiviert: Auch bereits vertonte Quests werden im Batch neu generiert (ueberschrieben).&#x0a;Wenn deaktiviert: Bereits vertonte Quests werden uebersprungen (Token sparen)."/>
 
-                    <!-- Batch-Button fuer beide Stimmen -->
-                    <Button x:Name="BatchDualTtsButton"
-                            Grid.Column="5"
-                            Content="Alle TTS (M+W) generieren"
-                            Width="170"
-                            Height="24"
-                            Click="OnBatchDualTtsClick"
-                            Background="#673AB7"
-                            Foreground="White"
-                            FontWeight="SemiBold"
-                            ToolTip="Generiert TTS fuer alle gefilterten Quests in beiden Stimmen (maennlich + weiblich)"/>
+                    <!-- Batch-Buttons fuer TTS-Generierung -->
+                    <StackPanel Grid.Column="5" Orientation="Horizontal">
+                        <Button x:Name="BatchMaleTtsButton"
+                                Content="Alle Maennlich"
+                                Width="100"
+                                Height="24"
+                                Click="OnBatchMaleTtsClick"
+                                Background="#1976D2"
+                                Foreground="White"
+                                FontWeight="SemiBold"
+                                ToolTip="Generiert TTS fuer alle gefilterten Quests nur mit maennlicher Stimme"/>
+                        <Button x:Name="BatchFemaleTtsButton"
+                                Content="Alle Weiblich"
+                                Width="100"
+                                Height="24"
+                                Margin="4,0,0,0"
+                                Click="OnBatchFemaleTtsClick"
+                                Background="#E91E63"
+                                Foreground="White"
+                                FontWeight="SemiBold"
+                                ToolTip="Generiert TTS fuer alle gefilterten Quests nur mit weiblicher Stimme"/>
+                        <Button x:Name="BatchDualTtsButton"
+                                Content="Beide (M+W)"
+                                Width="90"
+                                Height="24"
+                                Margin="4,0,0,0"
+                                Click="OnBatchDualTtsClick"
+                                Background="#673AB7"
+                                Foreground="White"
+                                FontWeight="SemiBold"
+                                ToolTip="Generiert TTS fuer alle gefilterten Quests in beiden Stimmen (maennlich + weiblich)"/>
+                    </StackPanel>
                 </Grid>
 
                 <!-- Zeile 3: AzerothCore MySQL-Datenbank Import -->
@@ -665,10 +738,77 @@
                     <DataGridTextColumn Header="Zone" Binding="{Binding Zone}" Width="1*" IsReadOnly="True"/>
                     <DataGridCheckBoxColumn Header="Grp" Binding="{Binding IsGroupQuest, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                             Width="35" ToolTipService.ToolTip="Gruppenquest"/>
-                    <DataGridCheckBoxColumn Header="M" Binding="{Binding HasMaleTts}" Width="28" IsReadOnly="True"/>
-                    <DataGridCheckBoxColumn Header="W" Binding="{Binding HasFemaleTts}" Width="28" IsReadOnly="True"/>
+                    <!-- Vertont-Status Spalte (Audio-Index) -->
+                    <DataGridTemplateColumn Header="V" Width="25" ToolTipService.ToolTip="Vertont (aus Audio-Index)">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding HasAudioFromIndex, Converter={x:Null}}"
+                                           HorizontalAlignment="Center"
+                                           FontWeight="Bold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFullyVoiced}" Value="True">
+                                                    <Setter Property="Text" Value="V"/>
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                    <Setter Property="ToolTip" Value="Vollstaendig vertont (M+W)"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding HasAudioFromIndex}" Value="True">
+                                                    <Setter Property="Text" Value="T"/>
+                                                    <Setter Property="Foreground" Value="Orange"/>
+                                                    <Setter Property="ToolTip" Value="Teilweise vertont"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding HasAudioFromIndex}" Value="False">
+                                                    <Setter Property="Text" Value="-"/>
+                                                    <Setter Property="Foreground" Value="Gray"/>
+                                                    <Setter Property="ToolTip" Value="Noch nicht vertont"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridCheckBoxColumn Header="M" Binding="{Binding HasMaleTts}" Width="28" IsReadOnly="True"
+                                            ToolTipService.ToolTip="Maennliche Stimme vorhanden"/>
+                    <DataGridCheckBoxColumn Header="W" Binding="{Binding HasFemaleTts}" Width="28" IsReadOnly="True"
+                                            ToolTipService.ToolTip="Weibliche Stimme vorhanden"/>
                     <DataGridCheckBoxColumn Header="OK" Binding="{Binding TtsReviewed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                             Width="28" ToolTipService.ToolTip="TTS geprueft"/>
+                    <!-- Workflow-Status Spalte -->
+                    <DataGridTemplateColumn Header="Status" Width="55" ToolTipService.ToolTip="Workflow-Status">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock HorizontalAlignment="Center" FontWeight="Bold" FontSize="10">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="Offen"/>
+                                            <Setter Property="Foreground" Value="Gray"/>
+                                            <Setter Property="ToolTip" Value="Quest ist offen"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WorkflowStatus}" Value="InProgress">
+                                                    <Setter Property="Text" Value="In Arbeit"/>
+                                                    <Setter Property="Foreground" Value="#FF9800"/>
+                                                    <Setter Property="ToolTip" Value="Quest wird bearbeitet"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding WorkflowStatus}" Value="Completed">
+                                                    <Setter Property="Text" Value="Fertig"/>
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                    <Setter Property="ToolTip" Value="Quest ist abgeschlossen"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                                    <Setter Property="Text" Value="Gesperrt"/>
+                                                    <Setter Property="Foreground" Value="#D32F2F"/>
+                                                    <Setter Property="ToolTip" Value="Quest ist gesperrt"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridCheckBoxColumn Header="Err" Binding="{Binding HasTtsError, Mode=OneWay}" Width="30" IsReadOnly="True"/>
 
                     <!-- Audio-Preview Spalte mit Play-Buttons -->
@@ -716,7 +856,26 @@
                         <TextBlock Text="Hauptstory: " FontWeight="Bold"/>
                         <TextBlock Text="{Binding SelectedQuest.IsMainStory}" Margin="4,0,16,0"/>
                         <TextBlock Text="Audio: " FontWeight="Bold"/>
-                        <TextBlock x:Name="HasAudioText" Text="{Binding SelectedQuest.HasTtsAudio}" Foreground="Gray"/>
+                        <TextBlock x:Name="HasAudioText" Foreground="Gray">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedQuest.IsFullyVoiced}" Value="True">
+                                            <Setter Property="Text" Value="Vollstaendig (M+W)"/>
+                                            <Setter Property="Foreground" Value="Green"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SelectedQuest.HasAudioFromIndex}" Value="True">
+                                            <Setter Property="Text" Value="Teilweise"/>
+                                            <Setter Property="Foreground" Value="Orange"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SelectedQuest.HasAudioFromIndex}" Value="False">
+                                            <Setter Property="Text" Value="Nicht vertont"/>
+                                            <Setter Property="Foreground" Value="Gray"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                 </StackPanel>
 
@@ -757,8 +916,8 @@
                                      Margin="0,0,0,8"
                                      Background="#F0FFF0"/>
 
-                            <!-- Abschlusstext (Completion) -->
-                            <TextBlock Text="Abschlusstext (Completion):" FontWeight="Bold" Margin="0,0,0,2"/>
+                            <!-- Belohnungstext (Completion aus quest_template_locale - DB-Feld ist vertauscht!) -->
+                            <TextBlock Text="Belohnungstext (Completion):" FontWeight="Bold" Margin="0,0,0,2"/>
                             <TextBox x:Name="CompletionTextBox"
                                      Text="{Binding SelectedQuest.Completion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      TextWrapping="Wrap"
@@ -768,7 +927,66 @@
                                      VerticalScrollBarVisibility="Auto"
                                      Foreground="#8B4513"
                                      Margin="0,0,0,8"
-                                     Background="#FFF8F0"/>
+                                     Background="#FFF8F0"
+                                     ToolTip="Belohnungstext - wird im TTS als 'Belohnung:' ausgegeben"/>
+
+                            <!-- NEU: RewardText (Abschlusstext aus quest_offer_reward_locale - DB-Feld ist vertauscht!) -->
+                            <Border Background="#E8F5E9" BorderBrush="#81C784" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="Abschlusstext (RewardText):" FontWeight="Bold"/>
+                                        <TextBlock x:Name="CompletionTextSourceLabel"
+                                                   Text=""
+                                                   Margin="8,0,0,0"
+                                                   Foreground="Gray"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="CompletionTextOverrideIndicator"
+                                                   Text="[Ueberschrieben]"
+                                                   Foreground="#FF9800"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="11"
+                                                   Margin="8,0,0,0"
+                                                   Visibility="Collapsed"/>
+                                    </StackPanel>
+                                    <TextBox x:Name="CompletionTextEditBox"
+                                             Text="{Binding SelectedQuest.RewardText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             TextWrapping="Wrap"
+                                             AcceptsReturn="True"
+                                             MinHeight="50"
+                                             MaxHeight="100"
+                                             VerticalScrollBarVisibility="Auto"
+                                             Foreground="#2E7D32"
+                                             Background="#F1F8E9"
+                                             ToolTip="Abschlusstext - wird im TTS als 'Abschluss:' ausgegeben"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Button x:Name="ResetCompletionTextButton"
+                                                Content="Auf Original zuruecksetzen"
+                                                Height="24"
+                                                Padding="8,0"
+                                                Click="OnResetCompletionTextClick"
+                                                ToolTip="Setzt den Belohnungstext auf das Original zurueck"
+                                                IsEnabled="False"/>
+                                        <Button x:Name="CorrectCompletionTextButton"
+                                                Content="KI-Korrektur"
+                                                Height="24"
+                                                Padding="8,0"
+                                                Margin="8,0,0,0"
+                                                Click="OnCorrectCompletionTextClick"
+                                                Background="#9C27B0"
+                                                Foreground="White"
+                                                ToolTip="Korrigiert den Text mit KI (Grammatik, Stil)"/>
+                                        <TextBlock x:Name="OriginalCompletionTextPreview"
+                                                   Text=""
+                                                   Foreground="Gray"
+                                                   FontSize="10"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="300"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- Speichern-Button fuer Overrides -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
@@ -1152,6 +1370,25 @@
                                 Background="#9E9E9E"
                                 Foreground="White"
                                 ToolTip="Als Nebenquest markieren"/>
+                        <Rectangle Width="1" Fill="#CCC" Margin="8,2"/>
+                        <Button x:Name="MarkCompletedButton"
+                                Content="Erledigt"
+                                Width="70"
+                                Height="30"
+                                Margin="0,0,4,0"
+                                Click="OnMarkCompletedClick"
+                                Background="#4CAF50"
+                                Foreground="White"
+                                ToolTip="Quest als erledigt markieren und sperren"/>
+                        <Button x:Name="UnlockButton"
+                                Content="Entsperren"
+                                Width="80"
+                                Height="30"
+                                Click="OnUnlockQuestClick"
+                                Background="#FF9800"
+                                Foreground="White"
+                                ToolTip="Gesperrte Quest wieder freigeben"
+                                Visibility="Collapsed"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>

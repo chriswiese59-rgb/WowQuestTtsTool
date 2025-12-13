@@ -75,6 +75,37 @@ namespace WowQuestTtsTool.Services
         [JsonPropertyName("is_excluded")]
         public bool IsExcluded { get; set; }
 
+        // === Workflow-Status ===
+
+        [JsonPropertyName("workflow_status")]
+        public QuestWorkflowStatus WorkflowStatus { get; set; } = QuestWorkflowStatus.Open;
+
+        [JsonPropertyName("is_locked")]
+        public bool IsLocked { get; set; }
+
+        [JsonPropertyName("completed_at")]
+        public DateTime? CompletedAt { get; set; }
+
+        [JsonPropertyName("started_at")]
+        public DateTime? StartedAt { get; set; }
+
+        // === RewardText (quest_offer_reward_locale) ===
+
+        [JsonPropertyName("reward_text")]
+        public string? RewardText { get; set; }
+
+        [JsonPropertyName("original_reward_text")]
+        public string? OriginalRewardText { get; set; }
+
+        [JsonPropertyName("reward_text_source")]
+        public QuestTextSource RewardTextSource { get; set; } = QuestTextSource.None;
+
+        [JsonPropertyName("is_reward_text_overridden")]
+        public bool IsRewardTextOverridden { get; set; }
+
+        [JsonPropertyName("request_items_text")]
+        public string? RequestItemsText { get; set; }
+
         /// <summary>
         /// Erstellt Metadaten aus einem Quest-Objekt.
         /// </summary>
@@ -93,7 +124,18 @@ namespace WowQuestTtsTool.Services
                 TtsErrorCount = quest.TtsErrorCount,
                 CustomTtsText = quest.CustomTtsText,
                 Notes = null,
-                IsExcluded = false
+                IsExcluded = false,
+                // Workflow-Status
+                WorkflowStatus = quest.WorkflowStatus,
+                IsLocked = quest.IsLocked,
+                CompletedAt = quest.CompletedAt,
+                StartedAt = quest.StartedAt,
+                // RewardText (quest_offer_reward_locale)
+                RewardText = quest.RewardText,
+                OriginalRewardText = quest.OriginalRewardText,
+                RewardTextSource = quest.RewardTextSource,
+                IsRewardTextOverridden = quest.IsRewardTextOverridden,
+                RequestItemsText = quest.RequestItemsText
             };
         }
 
@@ -113,6 +155,28 @@ namespace WowQuestTtsTool.Services
             if (!string.IsNullOrEmpty(CustomTtsText))
             {
                 quest.CustomTtsText = CustomTtsText;
+            }
+            // Workflow-Status
+            quest.WorkflowStatus = WorkflowStatus;
+            quest.IsLocked = IsLocked;
+            quest.CompletedAt = CompletedAt;
+            quest.StartedAt = StartedAt;
+            // RewardText - nur ueberschriebene Daten anwenden
+            if (IsRewardTextOverridden)
+            {
+                quest.RewardText = RewardText;
+                quest.IsRewardTextOverridden = IsRewardTextOverridden;
+                quest.RewardTextSource = RewardTextSource;
+            }
+            // OriginalRewardText nur anwenden wenn leer (kommt aus DB)
+            if (string.IsNullOrEmpty(quest.OriginalRewardText) && !string.IsNullOrEmpty(OriginalRewardText))
+            {
+                quest.OriginalRewardText = OriginalRewardText;
+            }
+            // RequestItemsText
+            if (!string.IsNullOrEmpty(RequestItemsText))
+            {
+                quest.RequestItemsText = RequestItemsText;
             }
         }
     }
@@ -438,13 +502,33 @@ namespace WowQuestTtsTool.Services
 
         /// <summary>
         /// Gibt an, ob ein Projekt existiert.
+        /// Prueft sowohl Projektdatei als auch Quest-Cache.
         /// </summary>
-        public bool HasExistingProject => File.Exists(_projectFilePath) && _currentProject.Quests.Count > 0;
+        public bool HasExistingProject
+        {
+            get
+            {
+                // Projekt existiert wenn:
+                // 1. Projektdatei mit Quest-Daten existiert, ODER
+                // 2. Quest-Cache existiert (quests_cache.json)
+                if (File.Exists(_projectFilePath) && _currentProject.Quests.Count > 0)
+                    return true;
+
+                // Fallback: Quest-Cache pruefen
+                var cacheFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "quests_cache.json");
+                return File.Exists(cacheFile);
+            }
+        }
 
         /// <summary>
         /// Gibt die Anzahl der gespeicherten Quest-Metadaten zurück.
         /// </summary>
         public int SavedQuestCount => _currentProject.Quests.Count;
+
+        /// <summary>
+        /// Gibt das letzte Änderungsdatum des Projekts zurück.
+        /// </summary>
+        public DateTime? LastModified => _currentProject.LastModified;
 
         /// <summary>
         /// Löscht alle Projektdaten (mit Backup).

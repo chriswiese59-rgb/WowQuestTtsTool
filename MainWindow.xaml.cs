@@ -31,11 +31,13 @@ namespace WowQuestTtsTool
         private string _ttsStatusFilter = "all"; // all, complete, without, without_male, without_female, incomplete
         private string _localizationFilter = "all"; // all, fully_german, mixed, only_english, incomplete
         private string _sortMode = "standard"; // standard, id_only, zone_id, category_id, localization_id
+        private string _workflowFilter = "all"; // active (Open+InProgress), open_only, in_progress, completed, all - Standard: all fuer Kompatibilitaet
+        private string _voicedFilter = "all"; // not_voiced, voiced, voiced_complete, voiced_incomplete, all
         private ElevenLabsService? _elevenLabsService;
         private readonly TtsConfigService _configService;
 
         // Text-Overrides Container
-        private readonly QuestTextOverridesContainer _textOverrides = new();
+        private QuestTextOverridesContainer _textOverrides = new();
 
         // Skip-Logik: Bereits vertonte Quests im Batch ueberspringen (Standard: true)
         private bool _forceReTtsExisting = false;
@@ -134,6 +136,60 @@ namespace WowQuestTtsTool
         public string SessionTrackerText =>
             $"Session: {SessionCharCount:N0} Zeichen, ~{SessionTokenEstimate:N0} Tokens, ~{SessionCostEstimate:N2} {_exportSettings?.CurrencySymbol ?? "€"}";
 
+        // === Audio-Index Properties ===
+
+        private bool _isAudioIndexScanning;
+        private string _audioIndexStats = "";
+
+        /// <summary>
+        /// Gibt an, ob der AudioIndexService gerade scannt.
+        /// </summary>
+        public bool IsAudioIndexScanning
+        {
+            get => _isAudioIndexScanning;
+            set
+            {
+                if (_isAudioIndexScanning != value)
+                {
+                    _isAudioIndexScanning = value;
+                    OnPropertyChanged(nameof(IsAudioIndexScanning));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Statistik-Text fuer den Audio-Index (z.B. "123 mit Audio / 456 offen").
+        /// </summary>
+        public string AudioIndexStats
+        {
+            get => _audioIndexStats;
+            set
+            {
+                if (_audioIndexStats != value)
+                {
+                    _audioIndexStats = value;
+                    OnPropertyChanged(nameof(AudioIndexStats));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Aktueller Filter fuer den Audio/Voiced-Status.
+        /// </summary>
+        public string VoicedFilter
+        {
+            get => _voicedFilter;
+            set
+            {
+                if (_voicedFilter != value)
+                {
+                    _voicedFilter = value;
+                    OnPropertyChanged(nameof(VoicedFilter));
+                    ApplyFilter();
+                }
+            }
+        }
+
         public ObservableCollection<Quest> Quests { get; } = [];
         public ObservableCollection<Quest> FilteredQuests { get; } = [];
         public ICollectionView? QuestsView { get; private set; }
@@ -149,14 +205,30 @@ namespace WowQuestTtsTool
                     OnPropertyChanged(nameof(SelectedQuest));
                     CheckExistingAudio();
                     UpdateTtsPreviewInfo();
+                    UpdateLockButtonVisibility();
                 }
             }
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public MainWindow()
+        // Speichert die Benutzerauswahl vom Startup-Dialog
+        private StartupDialog.StartupChoice _startupChoice = StartupDialog.StartupChoice.ContinueLastProject;
+        private string? _selectedProjectPath;
+        private bool _loadOnlyVoiced;
+
+        /// <summary>
+        /// Konstruktor mit Startup-Auswahl (wird von App.xaml.cs aufgerufen).
+        /// </summary>
+        /// <param name="startupChoice">Die Auswahl aus dem Startup-Dialog</param>
+        /// <param name="selectedProjectPath">Pfad zum ausgewaehlten Projekt (optional)</param>
+        /// <param name="loadOnlyVoiced">Ob nur vertonte Quests geladen werden sollen</param>
+        public MainWindow(StartupDialog.StartupChoice startupChoice, string? selectedProjectPath = null, bool loadOnlyVoiced = false)
         {
+            _startupChoice = startupChoice;
+            _selectedProjectPath = selectedProjectPath;
+            _loadOnlyVoiced = loadOnlyVoiced;
+
             InitializeComponent();
             DataContext = this;
 
@@ -168,12 +240,6 @@ namespace WowQuestTtsTool
 
             // TTS Export initialisieren
             _exportSettings = TtsExportSettings.Instance;
-
-            // Projekt-Settings anwenden (falls vorhanden)
-            if (ProjectService.Instance.HasExistingProject)
-            {
-                ProjectService.Instance.ApplySettingsToExport(_exportSettings);
-            }
 
             // Dummy-Service als Fallback (wird in InitializeElevenLabs überschrieben)
             _ttsService = new DummyTtsService();
@@ -195,38 +261,181 @@ namespace WowQuestTtsTool
             // Beim Schließen Quests speichern
             Closing += MainWindow_Closing;
 
+            // Startup-Auswahl verarbeiten
+            ProcessStartupChoice();
+        }
+
+        /// <summary>
+        /// Verarbeitet die Startup-Auswahl.
+        /// </summary>
+        private void ProcessStartupChoice()
+        {
+            switch (_startupChoice)
+            {
+                case StartupDialog.StartupChoice.ContinueLastProject:
+                    LoadExistingProject();
+                    break;
+
+                case StartupDialog.StartupChoice.LoadOtherProject:
+                    LoadProjectFromPath(_selectedProjectPath);
+                    break;
+
+                case StartupDialog.StartupChoice.NewProject:
+                    StartNewProject();
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Laedt ein Projekt von einem bestimmten Pfad.
+        /// </summary>
+        private void LoadProjectFromPath(string? projectPath)
+        {
+            if (string.IsNullOrEmpty(projectPath))
+            {
+                LoadExistingProject();
+                return;
+            }
+
             try
             {
+                // Projekt-Settings anwenden
+                if (ProjectService.Instance.HasExistingProject)
+                {
+                    ProjectService.Instance.ApplySettingsToExport(_exportSettings);
+                }
+
                 // Text-Overrides laden
                 _textOverrides = QuestTextOverridesStore.Load();
 
-                // Versuche zuerst den Cache zu laden
+                // Quests aus dem angegebenen Pfad laden
+                if (File.Exists(projectPath))
+                {
+                    LoadQuestsFromPath(projectPath);
+                    StatusText.Text = $"Projekt geladen: {Quests.Count} Quests aus {Path.GetFileName(projectPath)}";
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Die Projektdatei wurde nicht gefunden:\n{projectPath}",
+                        "Fehler",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+
+                // Projekt-Daten mergen
+                if (ProjectService.Instance.HasExistingProject)
+                {
+                    ProjectService.Instance.MergeWithQuests(Quests);
+                }
+
+                // Text-Overrides anwenden
+                var overrideCount = QuestTextOverridesStore.ApplyOverrides(Quests, _textOverrides);
+                if (overrideCount > 0)
+                {
+                    StatusText.Text += $" ({overrideCount} Overrides)";
+                }
+
+                // Sortierung und Filter anwenden
+                ApplyDefaultQuestSorting();
+                PopulateZoneFilter();
+
+                // Audio-Index initialisieren
+                InitializeAudioIndex();
+
+                // Wenn nur vertonte Quests geladen werden sollen
+                if (_loadOnlyVoiced)
+                {
+                    Dispatcher.InvokeAsync(async () =>
+                    {
+                        await Task.Delay(500);
+                        FilterToVoicedQuestsOnly();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler beim Laden des Projekts:\n{ex.Message}",
+                    "Fehler",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Laedt das bestehende Projekt und alle gespeicherten Daten.
+        /// </summary>
+        private void LoadExistingProject()
+        {
+            try
+            {
+                // Projekt-Settings anwenden
+                if (ProjectService.Instance.HasExistingProject)
+                {
+                    ProjectService.Instance.ApplySettingsToExport(_exportSettings);
+                }
+
+                // Text-Overrides laden
+                _textOverrides = QuestTextOverridesStore.Load();
+
+                // Pfad zum Laden bestimmen (Standard-Cache)
+                string pathToLoad;
                 if (File.Exists(_questsCachePath))
                 {
-                    LoadQuestsFromPath(_questsCachePath);
-
-                    // Projekt-Daten mergen (TTS-Status aus Projekt übernehmen)
-                    if (ProjectService.Instance.HasExistingProject)
-                    {
-                        ProjectService.Instance.MergeWithQuests(Quests);
-                        StatusText.Text = $"Wiederhergestellt: {Quests.Count} Quests (Projekt-Status geladen)";
-                    }
-                    else
-                    {
-                        StatusText.Text = $"Wiederhergestellt: {Quests.Count} Quests aus Cache";
-                    }
-
-                    // Text-Overrides anwenden
-                    var overrideCount = QuestTextOverridesStore.ApplyOverrides(Quests, _textOverrides);
-                    if (overrideCount > 0)
-                    {
-                        StatusText.Text += $" ({overrideCount} Overrides)";
-                    }
+                    pathToLoad = _questsCachePath;
                 }
                 else
                 {
                     LoadQuestsFromJson();
+                    ApplyDefaultQuestSorting();
+                    PopulateZoneFilter();
+                    InitializeAudioIndex();
+                    return;
                 }
+
+                // Quests laden
+                LoadQuestsFromPath(pathToLoad);
+
+                // Projekt-Daten mergen (TTS-Status aus Projekt uebernehmen)
+                if (ProjectService.Instance.HasExistingProject)
+                {
+                    ProjectService.Instance.MergeWithQuests(Quests);
+                }
+
+                // Text-Overrides anwenden
+                var overrideCount = QuestTextOverridesStore.ApplyOverrides(Quests, _textOverrides);
+
+                // Audio-Index initialisieren (muss vor Filter passieren)
+                InitializeAudioIndex();
+
+                // Warten bis Audio-Index geladen ist, dann filtern
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    // Kurz warten bis Audio-Index geladen
+                    await Task.Delay(500);
+
+                    // Wenn nur vertonte Quests geladen werden sollen
+                    if (_loadOnlyVoiced)
+                    {
+                        FilterToVoicedQuestsOnly();
+                    }
+
+                    // Status-Text aktualisieren
+                    var statusText = $"Projekt geladen: {FilteredQuests.Count} Quests";
+
+                    if (_loadOnlyVoiced)
+                    {
+                        statusText += " (nur vertonte)";
+                    }
+                    if (overrideCount > 0)
+                    {
+                        statusText += $" ({overrideCount} Overrides)";
+                    }
+
+                    StatusText.Text = statusText;
+                });
 
                 // Sortierung und Zonen-Filter anwenden
                 ApplyDefaultQuestSorting();
@@ -235,10 +444,295 @@ namespace WowQuestTtsTool
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    $"Fehler beim Laden der Quests:\n{ex.Message}",
+                    $"Fehler beim Laden des Projekts:\n{ex.Message}",
                     "Fehler",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Startet ein neues Projekt (setzt Fortschritt zurueck).
+        /// </summary>
+        private void StartNewProject()
+        {
+            try
+            {
+                // Projekt zuruecksetzen (erstellt Backup)
+                ProjectService.Instance.ResetProject();
+
+                // Text-Overrides zuruecksetzen
+                _textOverrides = new QuestTextOverridesContainer();
+
+                // Quests leeren
+                Quests.Clear();
+                FilteredQuests.Clear();
+
+                StatusText.Text = "Neues Projekt gestartet. Bitte Quests laden (Blizzard oder JSON).";
+
+                // Sortierung und Zonen-Filter anwenden
+                ApplyDefaultQuestSorting();
+                PopulateZoneFilter();
+
+                // Audio-Index initialisieren
+                InitializeAudioIndex();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler beim Starten des neuen Projekts:\n{ex.Message}",
+                    "Fehler",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Startet ein neues Projekt und laedt Quests von Blizzard.
+        /// </summary>
+        private async void StartNewProjectAndFetchBlizzard()
+        {
+            try
+            {
+                // Projekt zuruecksetzen (erstellt Backup)
+                ProjectService.Instance.ResetProject();
+
+                // Text-Overrides zuruecksetzen
+                _textOverrides = new QuestTextOverridesContainer();
+
+                // Quests leeren
+                Quests.Clear();
+                FilteredQuests.Clear();
+
+                StatusText.Text = "Neues Projekt - Lade Quests von Blizzard...";
+
+                // Audio-Index initialisieren
+                InitializeAudioIndex();
+
+                // Blizzard-Quests laden (asynchron)
+                await Task.Delay(100); // UI aktualisieren lassen
+                OnFetchFromBlizzardClick(this, new RoutedEventArgs());
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fehler beim Laden von Blizzard:\n{ex.Message}",
+                    "Fehler",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Initialisiert den AudioIndexService und startet den ersten Scan.
+        /// </summary>
+        private async void InitializeAudioIndex()
+        {
+            // Event-Handler registrieren
+            AudioIndexService.Instance.IndexUpdated += OnAudioIndexUpdated;
+            AudioIndexService.Instance.ScanProgressChanged += OnAudioIndexScanProgress;
+
+            // Ersten Scan starten (asynchron)
+            await RefreshAudioIndexAsync();
+        }
+
+        /// <summary>
+        /// Event-Handler wenn der Audio-Index aktualisiert wurde.
+        /// </summary>
+        private void OnAudioIndexUpdated(object? sender, EventArgs e)
+        {
+            // Auf UI-Thread ausfuehren
+            Dispatcher.Invoke(() =>
+            {
+                UpdateQuestsFromAudioIndex();
+                UpdateAudioIndexStats();
+                ApplyFilter();
+            });
+        }
+
+        /// <summary>
+        /// Event-Handler fuer Scan-Fortschritt.
+        /// </summary>
+        private void OnAudioIndexScanProgress(object? sender, (int FilesScanned, int QuestsFound) progress)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                StatusText.Text = $"Scanne Audio-Ordner... {progress.FilesScanned} Dateien, {progress.QuestsFound} Quests";
+            });
+        }
+
+        /// <summary>
+        /// Fuehrt einen neuen Audio-Index-Scan durch.
+        /// </summary>
+        private async Task RefreshAudioIndexAsync()
+        {
+            if (AudioIndexService.Instance.IsScanning)
+                return;
+
+            IsAudioIndexScanning = true;
+            var rootPath = TtsExportSettings.Instance.OutputRootPath;
+
+            try
+            {
+                // Pruefen ob Ordner konfiguriert ist
+                if (string.IsNullOrWhiteSpace(rootPath))
+                {
+                    var result = MessageBox.Show(
+                        "Der Audio-Ordner ist nicht konfiguriert.\n\n" +
+                        "Moechten Sie jetzt einen Ordner auswaehlen, in dem Ihre Audio-Dateien gespeichert sind?",
+                        "Audio-Ordner nicht konfiguriert",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        var dialog = new Microsoft.Win32.OpenFolderDialog
+                        {
+                            Title = "Audio-Ordner auswaehlen"
+                        };
+
+                        if (dialog.ShowDialog() == true)
+                        {
+                            rootPath = dialog.FolderName;
+                            TtsExportSettings.Instance.OutputRootPath = rootPath;
+                            TtsExportSettings.Instance.Save();
+                            OutputPathTextBox.Text = rootPath;
+                        }
+                        else
+                        {
+                            StatusText.Text = "Audio-Scan abgebrochen.";
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        StatusText.Text = "Audio-Ordner nicht konfiguriert! Bitte in Einstellungen setzen.";
+                        return;
+                    }
+                }
+
+                // Pruefen ob Ordner existiert
+                if (!System.IO.Directory.Exists(rootPath))
+                {
+                    var result = MessageBox.Show(
+                        $"Der konfigurierte Audio-Ordner existiert nicht:\n{rootPath}\n\n" +
+                        "Moechten Sie einen anderen Ordner auswaehlen?",
+                        "Ordner nicht gefunden",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        var dialog = new Microsoft.Win32.OpenFolderDialog
+                        {
+                            Title = "Audio-Ordner auswaehlen"
+                        };
+
+                        if (dialog.ShowDialog() == true)
+                        {
+                            rootPath = dialog.FolderName;
+                            TtsExportSettings.Instance.OutputRootPath = rootPath;
+                            TtsExportSettings.Instance.Save();
+                            OutputPathTextBox.Text = rootPath;
+                        }
+                        else
+                        {
+                            StatusText.Text = "Audio-Scan abgebrochen.";
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        StatusText.Text = $"Audio-Ordner existiert nicht: {rootPath}";
+                        return;
+                    }
+                }
+
+                StatusText.Text = $"Scanne Audio-Ordner: {rootPath}";
+
+                var count = await AudioIndexService.Instance.ScanAudioFolderAsync();
+                UpdateQuestsFromAudioIndex();
+                UpdateAudioIndexStats();
+                ApplyFilter(); // Filter neu anwenden nach Index-Update
+
+                var lastScan = AudioIndexService.Instance.LastScanTime?.ToString("HH:mm:ss") ?? "-";
+                var questsWithAudio = Quests.Count(q => q.HasAudioFromIndex);
+                StatusText.Text = $"Audio-Scan: {count} Quests im Index, {questsWithAudio} von {Quests.Count} geladenen Quests haben Audio";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Audio-Scan Fehler: {ex.Message}";
+                MessageBox.Show($"Audio-Scan Fehler:\n{ex.Message}\n\nPfad: {rootPath}", "Fehler", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                IsAudioIndexScanning = false;
+            }
+        }
+
+        /// <summary>
+        /// Aktualisiert alle Quest-Objekte mit den Daten aus dem Audio-Index.
+        /// </summary>
+        private void UpdateQuestsFromAudioIndex()
+        {
+            var audioService = AudioIndexService.Instance;
+            int updatedCount = 0;
+
+            foreach (var quest in Quests)
+            {
+                var entry = audioService.GetAudioEntry(quest.QuestId);
+                quest.UpdateFromAudioIndex(entry);
+                if (entry != null && entry.HasAnyAudio)
+                    updatedCount++;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"UpdateQuestsFromAudioIndex: {updatedCount} von {Quests.Count} Quests haben Audio im Index");
+
+            // DataGrid aktualisieren
+            QuestDataGrid?.Items.Refresh();
+        }
+
+        /// <summary>
+        /// Aktualisiert die Audio-Index-Statistiken.
+        /// </summary>
+        private void UpdateAudioIndexStats()
+        {
+            var (totalQuests, withMale, withFemale, withBoth, totalFiles) = AudioIndexService.Instance.GetStatistics();
+            var openQuests = Quests.Count - Quests.Count(q => q.HasAudioFromIndex);
+            AudioIndexStats = $"{totalQuests} vertont / {openQuests} offen";
+        }
+
+        /// <summary>
+        /// Handler fuer den "Audio-Ordner scannen"-Button.
+        /// </summary>
+        private async void OnRefreshAudioIndexClick(object sender, RoutedEventArgs e)
+        {
+            await RefreshAudioIndexAsync();
+        }
+
+        /// <summary>
+        /// Handler fuer den VoicedFilter-ComboBox.
+        /// </summary>
+        private void VoicedFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Guard: Noch nicht initialisiert waehrend InitializeComponent()
+            if (FilteredQuests == null) return;
+
+            if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem item)
+            {
+                VoicedFilter = item.Tag?.ToString() ?? "all";
+            }
+        }
+
+        private void WorkflowFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Guard: Noch nicht initialisiert waehrend InitializeComponent()
+            if (FilteredQuests == null) return;
+
+            if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem item)
+            {
+                _workflowFilter = item.Tag?.ToString() ?? "active";
+                ApplyFilter();
             }
         }
 
@@ -1282,6 +1776,9 @@ namespace WowQuestTtsTool
                     quest.HasMaleTts = true;
                     successCount++;
 
+                    // Audio-Index aktualisieren
+                    AudioIndexService.Instance.AddOrUpdateEntry(quest.QuestId, malePath);
+
                     // Session-Tracker aktualisieren
                     SessionCharCount += ttsText.Length;
                     var (_, tokens, cost) = _exportSettings.CalculateCostEstimate(ttsText.Length, 1);
@@ -1305,6 +1802,9 @@ namespace WowQuestTtsTool
                     await File.WriteAllBytesAsync(femalePath, femaleAudio, ct);
                     quest.HasFemaleTts = true;
                     successCount++;
+
+                    // Audio-Index aktualisieren
+                    AudioIndexService.Instance.AddOrUpdateEntry(quest.QuestId, femalePath);
 
                     // Session-Tracker aktualisieren
                     SessionCharCount += ttsText.Length;
@@ -1463,6 +1963,15 @@ namespace WowQuestTtsTool
             if (SelectedQuest == null)
             {
                 MessageBox.Show("Keine Quest ausgewählt.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Gesperrt/Completed-Check
+            if (!SelectedQuest.IsEditable)
+            {
+                var reason = SelectedQuest.IsCompleted ? "abgeschlossen" : "gesperrt";
+                MessageBox.Show($"Diese Quest ist {reason} und kann nicht bearbeitet werden.\n\nBitte zuerst entsperren.", "Nicht bearbeitbar",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -1862,12 +2371,14 @@ namespace WowQuestTtsTool
                 var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
                 await File.WriteAllBytesAsync(malePath, maleAudio);
                 SelectedQuest.HasMaleTts = true;
+                AudioIndexService.Instance.AddOrUpdateEntry(SelectedQuest.QuestId, malePath);
 
                 // Weibliche Stimme generieren
                 StatusText.Text = $"Quest {SelectedQuest.QuestId}: Generiere weibliche Stimme...";
                 var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
                 await File.WriteAllBytesAsync(femalePath, femaleAudio);
                 SelectedQuest.HasFemaleTts = true;
+                AudioIndexService.Instance.AddOrUpdateEntry(SelectedQuest.QuestId, femalePath);
 
                 // Legacy-Flag und Zeitstempel aktualisieren
                 SelectedQuest.HasTtsAudio = true;
@@ -2073,6 +2584,13 @@ namespace WowQuestTtsTool
 
             try
             {
+                // Gesperrt/Completed-Check
+                if (!quest.IsEditable)
+                {
+                    result.Error = quest.IsCompleted ? "Quest ist abgeschlossen" : "Quest ist gesperrt";
+                    return result;
+                }
+
                 var text = quest.TtsText;
                 if (string.IsNullOrWhiteSpace(text))
                 {
@@ -2116,6 +2634,7 @@ namespace WowQuestTtsTool
                     quest.HasMaleTts = true;
                     result.MaleGenerated = true;
                     voicesGenerated++;
+                    AudioIndexService.Instance.AddOrUpdateEntry(quest.QuestId, malePath);
                 }
 
                 // Weibliche Stimme
@@ -2136,6 +2655,7 @@ namespace WowQuestTtsTool
                     quest.HasFemaleTts = true;
                     result.FemaleGenerated = true;
                     voicesGenerated++;
+                    AudioIndexService.Instance.AddOrUpdateEntry(quest.QuestId, femalePath);
                 }
 
                 // Zeitstempel und Session-Tracker aktualisieren
@@ -2457,6 +2977,265 @@ namespace WowQuestTtsTool
         }
 
         /// <summary>
+        /// Generiert TTS nur fuer maennliche Stimme (alle gefilterten Quests).
+        /// </summary>
+        private async void OnBatchMaleTtsClick(object sender, RoutedEventArgs e)
+        {
+            await RunBatchTtsAsync(generateMale: true, generateFemale: false);
+        }
+
+        /// <summary>
+        /// Generiert TTS nur fuer weibliche Stimme (alle gefilterten Quests).
+        /// </summary>
+        private async void OnBatchFemaleTtsClick(object sender, RoutedEventArgs e)
+        {
+            await RunBatchTtsAsync(generateMale: false, generateFemale: true);
+        }
+
+        /// <summary>
+        /// Generische Batch-TTS-Methode fuer maennlich, weiblich oder beide.
+        /// </summary>
+        private async Task RunBatchTtsAsync(bool generateMale, bool generateFemale)
+        {
+            if (FilteredQuests.Count == 0)
+            {
+                MessageBox.Show("Keine Quests zum Verarbeiten vorhanden.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_exportSettings.OutputRootPath))
+            {
+                MessageBox.Show("Bitte zuerst einen Ausgabeordner waehlen.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (!_ttsService.IsConfigured)
+            {
+                MessageBox.Show(
+                    $"TTS-Service '{_ttsService.ProviderName}' ist nicht konfiguriert.\n\n" +
+                    "Bitte API-Key in den Einstellungen hinterlegen.",
+                    "TTS nicht verfuegbar",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Bestimme welche Stimme(n) generiert werden
+            string genderLabel = (generateMale, generateFemale) switch
+            {
+                (true, false) => "maennlich",
+                (false, true) => "weiblich",
+                _ => "beide"
+            };
+
+            // Quests filtern basierend auf gewuenschter Stimme
+            var questsToProcess = FilteredQuests
+                .Where(q =>
+                    (generateMale && !q.HasMaleTts) ||
+                    (generateFemale && !q.HasFemaleTts) ||
+                    ForceReTtsExisting)
+                .ToList();
+
+            if (questsToProcess.Count == 0)
+            {
+                var result = MessageBox.Show(
+                    $"Alle gefilterten Quests haben bereits {genderLabel} Stimme.\n\n" +
+                    "Moechtest du die Audio-Dateien neu generieren?",
+                    "Alle Quests haben Audio",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    questsToProcess = [.. FilteredQuests];
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            // Kostenberechnung und Bestaetigung
+            int voiceCount = (generateMale ? 1 : 0) + (generateFemale ? 1 : 0);
+            if (!ShowForecastDialogAndConfirm(questsToProcess, voiceCount, genderLabel))
+            {
+                return;
+            }
+
+            // UI vorbereiten
+            _batchCancellation = new CancellationTokenSource();
+            SetBatchModeUI(true);
+
+            int processed = 0;
+            int successful = 0;
+            int failed = 0;
+            int skipped = 0;
+            var errors = new List<string>();
+
+            TtsErrorLogger.Instance.LogBatchStart(questsToProcess.Count);
+
+            var audioIndex = AudioIndexWriter.LoadIndex(_exportSettings.OutputRootPath, _exportSettings.LanguageCode);
+            var audioLookup = AudioIndexWriter.BuildLookupDictionary(audioIndex);
+
+            try
+            {
+                for (int i = 0; i < questsToProcess.Count; i++)
+                {
+                    if (_batchCancellation.Token.IsCancellationRequested)
+                    {
+                        StatusText.Text = "Batch-Verarbeitung abgebrochen.";
+                        break;
+                    }
+
+                    var quest = questsToProcess[i];
+                    UpdateProgress(i, questsToProcess.Count, $"[{genderLabel.ToUpper()}] Quest {quest.QuestId}: {quest.Title}");
+
+                    SelectedQuest = quest;
+                    QuestDataGrid.ScrollIntoView(quest);
+
+                    try
+                    {
+                        var text = quest.TtsText;
+                        if (string.IsNullOrWhiteSpace(text))
+                        {
+                            errors.Add($"Quest {quest.QuestId}: Kein Text vorhanden");
+                            failed++;
+                            continue;
+                        }
+
+                        int voicesGenerated = 0;
+
+                        // Maennliche Stimme
+                        if (generateMale)
+                        {
+                            var malePath = _exportSettings.GetMaleOutputPath(quest);
+                            var maleFolder = Path.GetDirectoryName(malePath);
+                            if (!string.IsNullOrEmpty(maleFolder)) Directory.CreateDirectory(maleFolder);
+
+                            bool maleAlreadyVoiced = AudioIndexWriter.IsAlreadyVoiced(audioLookup, quest.QuestId, "male");
+                            bool shouldGenerate = ForceReTtsExisting || !maleAlreadyVoiced || !File.Exists(malePath);
+
+                            if (shouldGenerate)
+                            {
+                                var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                                await File.WriteAllBytesAsync(malePath, maleAudio, _batchCancellation.Token);
+                                quest.HasMaleTts = true;
+                                voicesGenerated++;
+                                AudioIndexWriter.UpdateEntry(audioIndex, audioLookup, _exportSettings.OutputRootPath, _exportSettings.LanguageCode, quest, "male", malePath);
+                            }
+                            else
+                            {
+                                skipped++;
+                                if (File.Exists(malePath))
+                                    quest.HasMaleTts = true;
+                            }
+                        }
+
+                        // Weibliche Stimme
+                        if (generateFemale)
+                        {
+                            var femalePath = _exportSettings.GetFemaleOutputPath(quest);
+                            var femaleFolder = Path.GetDirectoryName(femalePath);
+                            if (!string.IsNullOrEmpty(femaleFolder)) Directory.CreateDirectory(femaleFolder);
+
+                            bool femaleAlreadyVoiced = AudioIndexWriter.IsAlreadyVoiced(audioLookup, quest.QuestId, "female");
+                            bool shouldGenerate = ForceReTtsExisting || !femaleAlreadyVoiced || !File.Exists(femalePath);
+
+                            if (shouldGenerate)
+                            {
+                                var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                                await File.WriteAllBytesAsync(femalePath, femaleAudio, _batchCancellation.Token);
+                                quest.HasFemaleTts = true;
+                                voicesGenerated++;
+                                AudioIndexWriter.UpdateEntry(audioIndex, audioLookup, _exportSettings.OutputRootPath, _exportSettings.LanguageCode, quest, "female", femalePath);
+                            }
+                            else
+                            {
+                                skipped++;
+                                if (File.Exists(femalePath))
+                                    quest.HasFemaleTts = true;
+                            }
+                        }
+
+                        if (voicesGenerated > 0)
+                        {
+                            UpdateSessionTracker(text.Length, voicesGenerated);
+                            quest.LastTtsGeneratedAt = DateTime.Now;
+                        }
+
+                        quest.HasTtsAudio = quest.HasMaleTts && quest.HasFemaleTts;
+                        quest.ClearTtsError();
+                        successful++;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        var errorMsg = ex.Message;
+                        errors.Add($"Quest {quest.QuestId}: {errorMsg}");
+                        quest.SetTtsError(errorMsg);
+                        TtsErrorLogger.Instance.LogError(quest.QuestId, quest.Title ?? "", errorMsg);
+                        failed++;
+                    }
+
+                    processed++;
+                    QuestDataGrid.Items.Refresh();
+
+                    await Task.Delay(100, _batchCancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText.Text = "Batch-Verarbeitung abgebrochen.";
+            }
+            finally
+            {
+                SetBatchModeUI(false);
+                _batchCancellation?.Dispose();
+                _batchCancellation = null;
+
+                TtsErrorLogger.Instance.LogBatchEnd(successful, failed, skipped);
+
+                if (successful > 0 && !string.IsNullOrEmpty(_exportSettings.OutputRootPath))
+                {
+                    try
+                    {
+                        AudioIndexWriter.SaveIndex(audioIndex, _exportSettings.OutputRootPath, _exportSettings.LanguageCode);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Fehler beim Speichern des Audio-Index: {ex.Message}");
+                    }
+                }
+
+                SaveQuestsToCache();
+
+                var message = $"Batch-TTS ({genderLabel.ToUpper()}) abgeschlossen.\n\n" +
+                              $"Erfolgreich: {successful} Quests\n" +
+                              $"Uebersprungen: {skipped}\n" +
+                              $"Fehlgeschlagen: {failed}\n" +
+                              $"Gesamt: {processed} von {questsToProcess.Count}";
+
+                if (errors.Count > 0 && errors.Count <= 10)
+                {
+                    message += "\n\nFehler:\n" + string.Join("\n", errors);
+                }
+                else if (errors.Count > 10)
+                {
+                    message += $"\n\n{errors.Count} Fehler aufgetreten.";
+                }
+
+                MessageBox.Show(message, $"Batch-TTS ({genderLabel.ToUpper()}) Ergebnis",
+                    MessageBoxButton.OK,
+                    failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+
+                StatusText.Text = $"Batch ({genderLabel}) fertig: {successful} erfolgreich, {skipped} uebersprungen, {failed} fehlgeschlagen";
+            }
+        }
+
+        /// <summary>
         /// Wiederholt TTS-Generierung für alle Quests mit Fehlern.
         /// </summary>
         private async void OnRetryErrorsClick(object sender, RoutedEventArgs e)
@@ -2655,21 +3434,43 @@ namespace WowQuestTtsTool
         /// </summary>
         private bool ShowForecastDialogAndConfirm(List<Quest> quests)
         {
+            return ShowForecastDialogAndConfirm(quests, 2, "beide");
+        }
+
+        private bool ShowForecastDialogAndConfirm(List<Quest> quests, int voiceCount, string genderLabel)
+        {
             long totalChars = quests.Sum(q => (long)(q.TtsText?.Length ?? 0));
-            var (effectiveChars, estimatedTokens, estimatedCost) = _exportSettings.CalculateCostEstimate(totalChars, 2);
+            var (effectiveChars, estimatedTokens, estimatedCost) = _exportSettings.CalculateCostEstimate(totalChars, voiceCount);
+
+            // Stimmen-Info aufbauen
+            string voiceInfo;
+            if (voiceCount == 2)
+            {
+                voiceInfo = $"Maennliche Stimme: {_exportSettings.MaleVoiceId}\n" +
+                           $"Weibliche Stimme: {_exportSettings.FemaleVoiceId}";
+            }
+            else if (genderLabel == "maennlich")
+            {
+                voiceInfo = $"Stimme: {_exportSettings.MaleVoiceId} (maennlich)";
+            }
+            else
+            {
+                voiceInfo = $"Stimme: {_exportSettings.FemaleVoiceId} (weiblich)";
+            }
 
             var message = $"Batch-TTS Kostenvorhersage:\n\n" +
                           $"Quests: {quests.Count}\n" +
+                          $"Stimme(n): {genderLabel.ToUpper()} ({voiceCount}x)\n" +
                           $"Zeichen (gesamt): {totalChars:N0}\n" +
-                          $"Zeichen (effektiv, 2 Stimmen): {effectiveChars:N0}\n" +
-                          $"Geschätzte Tokens: ~{estimatedTokens:N0}\n" +
-                          $"Geschätzte Kosten: ~{estimatedCost:N2} {_exportSettings.CurrencySymbol}\n\n" +
+                          $"Zeichen (effektiv): {effectiveChars:N0}\n" +
+                          $"Geschaetzte Tokens: ~{estimatedTokens:N0}\n" +
+                          $"Geschaetzte Kosten: ~{estimatedCost:N2} {_exportSettings.CurrencySymbol}\n\n" +
                           $"Provider: {_ttsService.ProviderName}\n" +
-                          $"Männliche Stimme: {_exportSettings.MaleVoiceId}\n" +
-                          $"Weibliche Stimme: {_exportSettings.FemaleVoiceId}\n\n" +
+                          $"{voiceInfo}\n\n" +
+                          $"Force-Modus: {(ForceReTtsExisting ? "Ja (bereits vertonte werden ueberschrieben)" : "Nein (bereits vertonte werden uebersprungen)")}\n\n" +
                           "Fortfahren?";
 
-            var result = MessageBox.Show(message, "Batch-TTS starten",
+            var result = MessageBox.Show(message, $"Batch-TTS ({genderLabel.ToUpper()}) starten",
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
 
             return result == MessageBoxResult.Yes;
@@ -2798,6 +3599,26 @@ namespace WowQuestTtsTool
                 filtered = filtered.Where(q => q.IsGroupQuest == _groupQuestFilter.Value);
             }
 
+            // Workflow-Status Filter (WICHTIG: Standard zeigt nur Open + InProgress)
+            filtered = _workflowFilter switch
+            {
+                "active" => filtered.Where(q => q.WorkflowStatus == QuestWorkflowStatus.Open || q.WorkflowStatus == QuestWorkflowStatus.InProgress),
+                "open_only" => filtered.Where(q => q.WorkflowStatus == QuestWorkflowStatus.Open),
+                "in_progress" => filtered.Where(q => q.WorkflowStatus == QuestWorkflowStatus.InProgress),
+                "completed" => filtered.Where(q => q.WorkflowStatus == QuestWorkflowStatus.Completed),
+                _ => filtered // "all"
+            };
+
+            // Audio-Status Filter (Audio-Index basiert)
+            filtered = _voicedFilter switch
+            {
+                "not_voiced" => filtered.Where(q => !q.HasAudioFromIndex),
+                "voiced" => filtered.Where(q => q.HasAudioFromIndex),
+                "voiced_complete" => filtered.Where(q => q.IsFullyVoiced),
+                "voiced_incomplete" => filtered.Where(q => q.HasAudioFromIndex && !q.IsFullyVoiced),
+                _ => filtered // "all"
+            };
+
             // TTS-Status Filter
             filtered = _ttsStatusFilter switch
             {
@@ -2848,6 +3669,34 @@ namespace WowQuestTtsTool
             }
 
             StatusText.Text = $"Filter: {FilteredQuests.Count} von {Quests.Count} Quests";
+        }
+
+        /// <summary>
+        /// Filtert die Quest-Liste auf nur vertonte Quests.
+        /// Wird aufgerufen wenn "Nur vertonte Quests laden" im Projektauswahl-Dialog aktiviert war.
+        /// </summary>
+        private void FilterToVoicedQuestsOnly()
+        {
+            // VoicedFilter auf "voiced" setzen
+            _voicedFilter = "voiced";
+
+            // ComboBox aktualisieren falls vorhanden
+            if (VoicedFilterComboBox != null)
+            {
+                foreach (ComboBoxItem item in VoicedFilterComboBox.Items)
+                {
+                    if (item.Tag?.ToString() == "voiced")
+                    {
+                        VoicedFilterComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+            }
+
+            // Filter anwenden
+            ApplyFilter();
+
+            System.Diagnostics.Debug.WriteLine($"FilterToVoicedQuestsOnly: {FilteredQuests.Count} vertonte Quests gefiltert");
         }
 
         private void CategoryFilterComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -3146,6 +3995,7 @@ namespace WowQuestTtsTool
             {
                 TtsCharCountText.Text = "";
                 CustomTtsIndicator.Text = "";
+                UpdateCompletionTextUI(null);
                 return;
             }
 
@@ -3158,6 +4008,56 @@ namespace WowQuestTtsTool
 
             // Custom-TTS-Indikator
             CustomTtsIndicator.Text = SelectedQuest.HasCustomTtsText ? "(Custom-Text aktiv)" : "";
+
+            // CompletionText-UI aktualisieren
+            UpdateCompletionTextUI(SelectedQuest);
+        }
+
+        /// <summary>
+        /// Aktualisiert die CompletionText-UI Elemente basierend auf der Quest.
+        /// </summary>
+        private void UpdateCompletionTextUI(Quest? quest)
+        {
+            if (quest == null)
+            {
+                CompletionTextSourceLabel.Text = "";
+                CompletionTextOverrideIndicator.Visibility = Visibility.Collapsed;
+                ResetCompletionTextButton.IsEnabled = false;
+                OriginalCompletionTextPreview.Text = "";
+                return;
+            }
+
+            // Quelle anzeigen
+            CompletionTextSourceLabel.Text = quest.CompletionTextSource switch
+            {
+                QuestTextSource.AzerothCore => "(Quelle: AzerothCore)",
+                QuestTextSource.Blizzard => "(Quelle: Blizzard)",
+                QuestTextSource.Manual => "(Manuell)",
+                QuestTextSource.AiCorrected => "(KI-korrigiert)",
+                _ => quest.HasCompletionText ? "(Quelle: unbekannt)" : "(Kein Belohnungstext)"
+            };
+
+            // Ueberschrieben-Indikator
+            CompletionTextOverrideIndicator.Visibility = quest.IsCompletionTextOverridden
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            // Reset-Button aktivieren wenn ueberschrieben
+            ResetCompletionTextButton.IsEnabled = quest.IsCompletionTextOverridden
+                && !string.IsNullOrWhiteSpace(quest.OriginalCompletionText);
+
+            // Original-Text Vorschau
+            if (quest.IsCompletionTextOverridden && !string.IsNullOrWhiteSpace(quest.OriginalCompletionText))
+            {
+                var preview = quest.OriginalCompletionText.Length > 50
+                    ? quest.OriginalCompletionText.Substring(0, 50) + "..."
+                    : quest.OriginalCompletionText;
+                OriginalCompletionTextPreview.Text = $"Original: {preview}";
+            }
+            else
+            {
+                OriginalCompletionTextPreview.Text = "";
+            }
         }
 
         private void OnPlayMaleClick(object sender, RoutedEventArgs e)
@@ -3479,9 +4379,134 @@ namespace WowQuestTtsTool
                 return;
             }
 
+            if (!SelectedQuest.IsEditable)
+            {
+                var reason = SelectedQuest.IsCompleted ? "abgeschlossen" : "gesperrt";
+                MessageBox.Show($"Diese Quest ist {reason} und kann nicht bearbeitet werden.", "Nicht bearbeitbar",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             SelectedQuest.TtsReviewed = true;
             QuestDataGrid.Items.Refresh();
             StatusText.Text = $"Quest {SelectedQuest.QuestId} als geprüft markiert";
+        }
+
+        /// <summary>
+        /// Markiert die ausgewaehlte Quest als erledigt und sperrt sie.
+        /// </summary>
+        private void OnMarkCompletedClick(object sender, RoutedEventArgs e)
+        {
+            if (SelectedQuest == null)
+            {
+                MessageBox.Show("Bitte zuerst eine Quest auswählen.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (SelectedQuest.IsCompleted)
+            {
+                MessageBox.Show("Diese Quest ist bereits als erledigt markiert.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Bestaetigung anfordern
+            var result = MessageBox.Show(
+                $"Quest '{SelectedQuest.Title}' als erledigt markieren?\n\n" +
+                "Die Quest wird gesperrt und kann nicht mehr bearbeitet werden.",
+                "Quest abschliessen",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            SelectedQuest.MarkAsCompleted();
+            QuestDataGrid.Items.Refresh();
+            UpdateLockButtonVisibility();
+            StatusText.Text = $"Quest {SelectedQuest.QuestId} als erledigt markiert und gesperrt";
+
+            // Projekt speichern
+            SaveQuestProgress();
+        }
+
+        /// <summary>
+        /// Entsperrt eine gesperrte Quest.
+        /// </summary>
+        private void OnUnlockQuestClick(object sender, RoutedEventArgs e)
+        {
+            if (SelectedQuest == null)
+            {
+                MessageBox.Show("Bitte zuerst eine Quest auswählen.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (!SelectedQuest.IsLocked)
+            {
+                MessageBox.Show("Diese Quest ist nicht gesperrt.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Bestaetigung anfordern
+            var result = MessageBox.Show(
+                $"Quest '{SelectedQuest.Title}' entsperren?\n\n" +
+                "Der Erledigt-Status bleibt erhalten, aber die Quest kann wieder bearbeitet werden.",
+                "Quest entsperren",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            SelectedQuest.Unlock();
+            QuestDataGrid.Items.Refresh();
+            UpdateLockButtonVisibility();
+            StatusText.Text = $"Quest {SelectedQuest.QuestId} entsperrt";
+
+            // Projekt speichern
+            SaveQuestProgress();
+        }
+
+        /// <summary>
+        /// Aktualisiert die Sichtbarkeit der Sperr-Buttons basierend auf der ausgewaehlten Quest.
+        /// </summary>
+        private void UpdateLockButtonVisibility()
+        {
+            if (SelectedQuest == null)
+            {
+                MarkCompletedButton.Visibility = Visibility.Visible;
+                UnlockButton.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            if (SelectedQuest.IsLocked)
+            {
+                MarkCompletedButton.Visibility = Visibility.Collapsed;
+                UnlockButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                MarkCompletedButton.Visibility = Visibility.Visible;
+                UnlockButton.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>
+        /// Speichert den Quest-Fortschritt.
+        /// </summary>
+        private void SaveQuestProgress()
+        {
+            try
+            {
+                ProjectService.Instance.UpdateQuests(Quests);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Fehler beim Speichern des Fortschritts: {ex.Message}");
+            }
         }
 
         private void OnNextQuestClick(object sender, RoutedEventArgs e)
@@ -3660,6 +4685,158 @@ namespace WowQuestTtsTool
             {
                 StatusText.Text = $"Kein Override fuer Quest {SelectedQuest.QuestId} vorhanden";
             }
+        }
+
+        #endregion
+
+        #region CompletionText (Belohnungstext)
+
+        /// <summary>
+        /// Setzt den CompletionText auf das Original zurueck.
+        /// </summary>
+        private void OnResetCompletionTextClick(object sender, RoutedEventArgs e)
+        {
+            if (SelectedQuest == null)
+            {
+                MessageBox.Show("Bitte zuerst eine Quest auswaehlen.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (!SelectedQuest.IsCompletionTextOverridden)
+            {
+                MessageBox.Show("Der Belohnungstext wurde nicht ueberschrieben.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"Belohnungstext auf Original zuruecksetzen?\n\n" +
+                $"Original: {SelectedQuest.OriginalCompletionText?.Substring(0, Math.Min(100, SelectedQuest.OriginalCompletionText?.Length ?? 0))}...",
+                "Auf Original zuruecksetzen",
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            SelectedQuest.ResetCompletionTextToOriginal();
+            UpdateCompletionTextUI(SelectedQuest);
+            QuestDataGrid.Items.Refresh();
+            StatusText.Text = $"Belohnungstext fuer Quest {SelectedQuest.QuestId} auf Original zurueckgesetzt";
+        }
+
+        /// <summary>
+        /// Korrigiert den CompletionText mit KI (Grammatik, Stil).
+        /// </summary>
+        private async void OnCorrectCompletionTextClick(object sender, RoutedEventArgs e)
+        {
+            if (SelectedQuest == null)
+            {
+                MessageBox.Show("Bitte zuerst eine Quest auswaehlen.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var currentText = SelectedQuest.EffectiveCompletionText;
+            if (string.IsNullOrWhiteSpace(currentText))
+            {
+                MessageBox.Show("Kein Belohnungstext vorhanden.", "Hinweis",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Pruefen ob LLM-Service verfuegbar
+            if (_llmEnhancerService == null || !_llmEnhancerService.IsConfigured)
+            {
+                // Manueller Modus: Prompt in Zwischenablage kopieren
+                var prompt = BuildCompletionTextCorrectionPrompt(currentText);
+                try
+                {
+                    Clipboard.SetText(prompt);
+                    MessageBox.Show(
+                        "KI-Korrektur-Prompt wurde in die Zwischenablage kopiert!\n\n" +
+                        "Fuege ihn in ChatGPT, Claude oder Gemini ein und kopiere das Ergebnis zurueck.",
+                        "Prompt kopiert",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Fehler beim Kopieren: {ex.Message}", "Fehler",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                return;
+            }
+
+            // API-Modus
+            try
+            {
+                CorrectCompletionTextButton.IsEnabled = false;
+                StatusText.Text = "KI-Korrektur laeuft...";
+
+                var correctedText = await CorrectCompletionTextWithAiAsync(currentText);
+
+                if (!string.IsNullOrWhiteSpace(correctedText) && correctedText != currentText)
+                {
+                    SelectedQuest.OverrideCompletionText(correctedText, isAiCorrected: true);
+                    UpdateCompletionTextUI(SelectedQuest);
+                    QuestDataGrid.Items.Refresh();
+                    StatusText.Text = $"Belohnungstext fuer Quest {SelectedQuest.QuestId} KI-korrigiert";
+                }
+                else
+                {
+                    StatusText.Text = "Keine Aenderungen durch KI-Korrektur";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Fehler bei KI-Korrektur:\n{ex.Message}", "Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "KI-Korrektur fehlgeschlagen";
+            }
+            finally
+            {
+                CorrectCompletionTextButton.IsEnabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Erstellt den Prompt fuer die CompletionText-Korrektur.
+        /// </summary>
+        private string BuildCompletionTextCorrectionPrompt(string text)
+        {
+            return $@"Korrigiere den folgenden deutschen Quest-Belohnungstext fuer ein Hoerbuch:
+- Behebe Grammatik- und Rechtschreibfehler
+- Verbessere Stil und Lesbarkeit
+- Behalte die urspruengliche Bedeutung bei
+- Entferne unpassende Sonderzeichen
+- Schreibe in natuerlichem, fliessenden Deutsch
+
+Original-Text:
+{text}
+
+Korrigierter Text:";
+        }
+
+        /// <summary>
+        /// Korrigiert den Text mit dem konfigurierten LLM-Service.
+        /// </summary>
+        private async Task<string> CorrectCompletionTextWithAiAsync(string text)
+        {
+            if (_llmEnhancerService == null || !_llmEnhancerService.IsConfigured)
+                throw new InvalidOperationException("LLM-Service nicht konfiguriert");
+
+            // EnhanceTextAsync erwartet questTitle und originalText
+            var result = await _llmEnhancerService.EnhanceTextAsync(
+                SelectedQuest?.Title ?? "Belohnungstext",
+                text,
+                "Korrigiere den Belohnungstext fuer ein Hoerbuch");
+
+            if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.EnhancedText))
+            {
+                return result.EnhancedText;
+            }
+
+            // Fallback: Original zurueckgeben
+            return text;
         }
 
         #endregion

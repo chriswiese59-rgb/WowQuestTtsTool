@@ -33,8 +33,15 @@
   <!-- NuGet-Pakete -->
   <ItemGroup>
     <!-- MySqlConnector fuer AzerothCore Datenbank-Zugriff -->
-    <!-- Installation: Projekt -> NuGet-Pakete verwalten -> MySqlConnector suchen -> installieren -->
     <PackageReference Include="MySqlConnector" Version="2.5.0" />
+    <!-- SQLite fuer lokale Quest-Datenbank -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- WowQuestExporter Unterordner vom Build ausschliessen -->
+  <ItemGroup>
+    <Compile Remove="WowQuestExporter\**" />
+    <None Remove="WowQuestExporter\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +49,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="config\tts_config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="config\update_settings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
