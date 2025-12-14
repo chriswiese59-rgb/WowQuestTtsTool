@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 using WowQuestTtsTool.Services;
+using WowQuestTtsTool.Services.TtsEngines;
 
 namespace WowQuestTtsTool
 {
@@ -19,6 +20,8 @@ namespace WowQuestTtsTool
         private string _apiKey = "";
         private string _blizzardSecret = "";
         private string _llmApiKey = "";
+        private string _openAiApiKey = "";
+        private string _googleApiKey = "";
 
         public bool SettingsSaved { get; private set; } = false;
 
@@ -96,6 +99,9 @@ namespace WowQuestTtsTool
 
             // SQLite
             LoadSqliteSettings(exportSettings);
+
+            // TTS-Engines
+            LoadTtsEngineSettings();
 
             UpdateStatus();
         }
@@ -769,6 +775,281 @@ namespace WowQuestTtsTool
 
         #endregion
 
+        #region TTS-Engines Tab
+
+        private void LoadTtsEngineSettings()
+        {
+            var settings = TtsEngineSettings.Instance;
+
+            // Standard-Engine
+            foreach (ComboBoxItem item in DefaultEngineCombo.Items)
+            {
+                if (item.Tag?.ToString() == settings.ActiveEngineId)
+                {
+                    DefaultEngineCombo.SelectedItem = item;
+                    break;
+                }
+            }
+
+            // OpenAI
+            _openAiApiKey = settings.OpenAi.ApiKey;
+            if (!string.IsNullOrEmpty(_openAiApiKey))
+            {
+                OpenAiApiKeyBox.Password = _openAiApiKey;
+            }
+
+            foreach (ComboBoxItem item in OpenAiModelCombo.Items)
+            {
+                if (item.Tag?.ToString() == settings.OpenAi.Model)
+                {
+                    OpenAiModelCombo.SelectedItem = item;
+                    break;
+                }
+            }
+
+            foreach (ComboBoxItem item in OpenAiMaleVoiceCombo.Items)
+            {
+                if (item.Tag?.ToString() == settings.OpenAi.MaleVoice)
+                {
+                    OpenAiMaleVoiceCombo.SelectedItem = item;
+                    break;
+                }
+            }
+
+            foreach (ComboBoxItem item in OpenAiFemaleVoiceCombo.Items)
+            {
+                if (item.Tag?.ToString() == settings.OpenAi.FemaleVoice)
+                {
+                    OpenAiFemaleVoiceCombo.SelectedItem = item;
+                    break;
+                }
+            }
+
+            OpenAiSpeedSlider.Value = settings.OpenAi.Speed;
+
+            // Google Cloud TTS
+            _googleApiKey = settings.Gemini.ApiKey;
+            if (!string.IsNullOrEmpty(_googleApiKey))
+            {
+                GoogleApiKeyBox.Password = _googleApiKey;
+            }
+            GoogleServiceAccountPathBox.Text = settings.Gemini.ServiceAccountJsonPath;
+            GoogleMaleVoiceBox.Text = settings.Gemini.MaleVoice;
+            GoogleFemaleVoiceBox.Text = settings.Gemini.FemaleVoice;
+
+            // Sprache auswaehlen
+            foreach (ComboBoxItem item in GoogleLanguageCombo.Items)
+            {
+                if (item.Tag?.ToString() == settings.Gemini.LanguageCode)
+                {
+                    GoogleLanguageCombo.SelectedItem = item;
+                    break;
+                }
+            }
+
+            // Claude
+            if (!string.IsNullOrEmpty(settings.Claude.ApiKey))
+            {
+                ClaudeApiKeyBox.Password = settings.Claude.ApiKey;
+            }
+
+            UpdateOpenAiStatus();
+        }
+
+        private void SaveTtsEngineSettings()
+        {
+            var settings = TtsEngineSettings.Instance;
+
+            // Standard-Engine
+            settings.ActiveEngineId = (DefaultEngineCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "External";
+
+            // OpenAI
+            settings.OpenAi.ApiKey = _openAiApiKey;
+            settings.OpenAi.Model = (OpenAiModelCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "tts-1";
+            settings.OpenAi.MaleVoice = (OpenAiMaleVoiceCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "onyx";
+            settings.OpenAi.FemaleVoice = (OpenAiFemaleVoiceCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "nova";
+            settings.OpenAi.Speed = OpenAiSpeedSlider.Value;
+
+            // Google Cloud TTS
+            settings.Gemini.ApiKey = _googleApiKey;
+            settings.Gemini.ServiceAccountJsonPath = GoogleServiceAccountPathBox.Text;
+            settings.Gemini.MaleVoice = GoogleMaleVoiceBox.Text;
+            settings.Gemini.FemaleVoice = GoogleFemaleVoiceBox.Text;
+            settings.Gemini.LanguageCode = (GoogleLanguageCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "de-DE";
+
+            // Claude
+            settings.Claude.ApiKey = ClaudeApiKeyBox.Password;
+
+            settings.Save();
+
+            // Engine-Manager aktualisieren
+            TtsEngineManager.Instance.RefreshEngines();
+        }
+
+        private void DefaultEngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Optional: Status aktualisieren
+        }
+
+        private void OpenAiApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _openAiApiKey = OpenAiApiKeyBox.Password;
+            UpdateOpenAiStatus();
+        }
+
+        private void ToggleOpenAiApiKeyVisibility(object sender, RoutedEventArgs e)
+        {
+            // Toggle ist komplexer - fuer jetzt nur Hinweis
+            MessageBox.Show($"API-Key: {(_openAiApiKey.Length > 0 ? _openAiApiKey.Substring(0, Math.Min(8, _openAiApiKey.Length)) + "..." : "(leer)")}",
+                "OpenAI API-Key", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void UpdateOpenAiStatus()
+        {
+            if (string.IsNullOrWhiteSpace(_openAiApiKey))
+            {
+                OpenAiStatusText.Text = "Nicht konfiguriert";
+                OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Gray);
+            }
+            else
+            {
+                OpenAiStatusText.Text = "API-Key vorhanden";
+                OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Green);
+            }
+        }
+
+        private async void TestOpenAiTts_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_openAiApiKey))
+            {
+                MessageBox.Show("Bitte zuerst einen OpenAI API-Key eingeben.", "Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            OpenAiStatusText.Text = "Teste...";
+            OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Orange);
+
+            try
+            {
+                // Temporaere Settings fuer Test
+                var testSettings = new TtsEngineSettings();
+                testSettings.OpenAi.ApiKey = _openAiApiKey;
+                testSettings.OpenAi.Model = (OpenAiModelCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "tts-1";
+                testSettings.OpenAi.MaleVoice = (OpenAiMaleVoiceCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "onyx";
+                testSettings.OpenAi.Speed = OpenAiSpeedSlider.Value;
+
+                using var engine = new OpenAiTtsEngine(testSettings);
+                var result = await engine.ValidateConfigurationAsync();
+
+                if (result.IsValid)
+                {
+                    OpenAiStatusText.Text = "Verbindung OK!";
+                    OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Green);
+                    MessageBox.Show("OpenAI TTS Verbindung erfolgreich!", "Erfolg",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    OpenAiStatusText.Text = "Fehler";
+                    OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                    MessageBox.Show($"OpenAI TTS Fehler:\n{result.ErrorMessage}", "Fehler",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                OpenAiStatusText.Text = "Fehler";
+                OpenAiStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                MessageBox.Show($"Fehler beim Testen:\n{ex.Message}", "Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // --- Google Cloud TTS Event Handler ---
+
+        private void ToggleGoogleApiKeyVisibility(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show($"API-Key: {(_googleApiKey.Length > 0 ? _googleApiKey.Substring(0, Math.Min(8, _googleApiKey.Length)) + "..." : "(leer)")}",
+                "Google API-Key", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void SelectGoogleServiceAccount(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "JSON-Dateien (*.json)|*.json|Alle Dateien (*.*)|*.*",
+                Title = "Service Account JSON-Datei waehlen"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                GoogleServiceAccountPathBox.Text = dialog.FileName;
+            }
+        }
+
+        private void GoogleApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            _googleApiKey = GoogleApiKeyBox.Password;
+        }
+
+        private async void TestGoogleTts_Click(object sender, RoutedEventArgs e)
+        {
+            var hasApiKey = !string.IsNullOrWhiteSpace(_googleApiKey);
+            var hasServiceAccount = !string.IsNullOrWhiteSpace(GoogleServiceAccountPathBox.Text);
+
+            if (!hasApiKey && !hasServiceAccount)
+            {
+                MessageBox.Show("Bitte API-Key oder Service Account JSON-Datei angeben.", "Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            GoogleTtsStatusText.Text = "Teste...";
+            GoogleTtsStatusText.Foreground = new SolidColorBrush(Colors.Orange);
+
+            try
+            {
+                // Temporaere Settings fuer Test
+                var testSettings = new TtsEngineSettings();
+                testSettings.Gemini.ApiKey = _googleApiKey;
+                testSettings.Gemini.ServiceAccountJsonPath = GoogleServiceAccountPathBox.Text;
+                testSettings.Gemini.LanguageCode = (GoogleLanguageCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "de-DE";
+                testSettings.Gemini.MaleVoice = GoogleMaleVoiceBox.Text;
+                testSettings.Gemini.FemaleVoice = GoogleFemaleVoiceBox.Text;
+
+                using var engine = new GoogleCloudTtsEngine(testSettings);
+                var result = await engine.ValidateConfigurationAsync();
+
+                if (result.IsValid)
+                {
+                    GoogleTtsStatusText.Text = "Verbindung OK!";
+                    GoogleTtsStatusText.Foreground = new SolidColorBrush(Colors.Green);
+
+                    // Verfuegbare Stimmen anzeigen
+                    var voices = await engine.GetAvailableVoicesAsync();
+                    MessageBox.Show($"Google Cloud TTS Verbindung erfolgreich!\n\n{voices.Count} Stimmen fuer {testSettings.Gemini.LanguageCode} gefunden.",
+                        "Erfolg", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    GoogleTtsStatusText.Text = "Fehler";
+                    GoogleTtsStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                    MessageBox.Show($"Google Cloud TTS Fehler:\n{result.ErrorMessage}", "Fehler",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                GoogleTtsStatusText.Text = "Fehler";
+                GoogleTtsStatusText.Foreground = new SolidColorBrush(Colors.Red);
+                MessageBox.Show($"Fehler beim Testen:\n{ex.Message}", "Fehler",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
         private void Save_Click(object sender, RoutedEventArgs e)
         {
             var config = _configService.Config;
@@ -848,6 +1129,9 @@ namespace WowQuestTtsTool
             // SQLite
             exportSettings.UseSqliteDatabase = UseSqliteCheckBox.IsChecked ?? false;
             exportSettings.SqliteDatabasePath = SqlitePathBox.Text?.Trim() ?? "";
+
+            // TTS-Engines
+            SaveTtsEngineSettings();
 
             try
             {

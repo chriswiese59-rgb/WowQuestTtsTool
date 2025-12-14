@@ -14,6 +14,7 @@ using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
 using WowQuestTtsTool.Services;
+using WowQuestTtsTool.Services.TtsEngines;
 using WowQuestTtsTool.Services.Update;
 
 namespace WowQuestTtsTool
@@ -61,6 +62,103 @@ namespace WowQuestTtsTool
 
         // Datenbank-Konfiguration fuer AzerothCore Quest-Import
         private readonly QuestDbConfig _questDbConfig = new();
+
+        /// <summary>
+        /// Gibt die aktuell ausgewaehlte TTS-Engine ID zurueck.
+        /// </summary>
+        private string? SelectedTtsEngineId
+        {
+            get
+            {
+                if (TtsEngineCombo?.SelectedItem is ComboBoxItem item)
+                {
+                    return item.Tag?.ToString();
+                }
+                return TtsEngineSettings.Instance.ActiveEngineId;
+            }
+        }
+
+        /// <summary>
+        /// Gibt die maennliche Voice-ID fuer die ausgewaehlte Engine zurueck.
+        /// </summary>
+        private string GetMaleVoiceIdForSelectedEngine()
+        {
+            var engineId = SelectedTtsEngineId ?? "External";
+            var settings = TtsEngineSettings.Instance;
+
+            return engineId switch
+            {
+                "OpenAI" => settings.OpenAi.MaleVoice,
+                "Gemini" => settings.Gemini.MaleVoice,
+                "Claude" => settings.Claude.MaleVoice,
+                "External" => settings.External.MaleVoiceId,
+                _ => _exportSettings.MaleVoiceId // Fallback
+            };
+        }
+
+        /// <summary>
+        /// Gibt die weibliche Voice-ID fuer die ausgewaehlte Engine zurueck.
+        /// </summary>
+        private string GetFemaleVoiceIdForSelectedEngine()
+        {
+            var engineId = SelectedTtsEngineId ?? "External";
+            var settings = TtsEngineSettings.Instance;
+
+            return engineId switch
+            {
+                "OpenAI" => settings.OpenAi.FemaleVoice,
+                "Gemini" => settings.Gemini.FemaleVoice,
+                "Claude" => settings.Claude.FemaleVoice,
+                "External" => settings.External.FemaleVoiceId,
+                _ => _exportSettings.FemaleVoiceId // Fallback
+            };
+        }
+
+        /// <summary>
+        /// Generiert Audio ueber den TtsEngineManager mit der ausgewaehlten Engine.
+        /// </summary>
+        private async Task<byte[]> GenerateAudioWithSelectedEngineAsync(
+            string text,
+            string voiceGender,
+            string? outputPath = null,
+            CancellationToken ct = default)
+        {
+            var engineId = SelectedTtsEngineId ?? "External";
+            var voiceId = voiceGender.ToLower() == "female"
+                ? GetFemaleVoiceIdForSelectedEngine()
+                : GetMaleVoiceIdForSelectedEngine();
+
+            var request = new TtsRequest
+            {
+                Text = text,
+                VoiceId = voiceId,
+                VoiceGender = voiceGender,
+                OutputPath = outputPath
+            };
+
+            var result = await TtsEngineManager.Instance.GenerateAudioAsync(request, engineId, ct);
+
+            if (!result.Success)
+            {
+                throw new Exception($"TTS-Fehler ({engineId}): {result.ErrorMessage}");
+            }
+
+            // Audio-Datei lesen und zurueckgeben
+            if (!string.IsNullOrEmpty(result.AudioFilePath) && File.Exists(result.AudioFilePath))
+            {
+                var audioData = await File.ReadAllBytesAsync(result.AudioFilePath, ct);
+
+                // Temporaere Datei loeschen wenn kein Ausgabepfad angegeben wurde
+                if (string.IsNullOrEmpty(outputPath))
+                {
+                    try { File.Delete(result.AudioFilePath); } catch { }
+                }
+
+                return audioData;
+            }
+
+            throw new Exception("Keine Audio-Datei generiert.");
+        }
 
         /// <summary>
         /// Konfiguration fuer die MySQL-Datenbankverbindung (fuer XAML-Binding).
@@ -753,6 +851,83 @@ namespace WowQuestTtsTool
 
             // TTS Provider anzeigen
             TtsProviderText.Text = $"TTS: {_ttsService.ProviderName}";
+
+            // TTS-Engine ComboBox initialisieren
+            InitializeTtsEngineCombo();
+        }
+
+        /// <summary>
+        /// Initialisiert die TTS-Engine Auswahl ComboBox.
+        /// </summary>
+        private void InitializeTtsEngineCombo()
+        {
+            TtsEngineCombo.Items.Clear();
+
+            var manager = TtsEngineManager.Instance;
+            var engines = manager.RegisteredEngines.Values;
+            var activeEngineId = TtsEngineSettings.Instance.ActiveEngineId;
+
+            foreach (var engine in engines)
+            {
+                // Status-Text
+                string statusText;
+                if (engine.IsAvailable)
+                    statusText = "bereit";
+                else if (engine.IsConfigured)
+                    statusText = "konfiguriert";
+                else
+                    statusText = "nicht konfiguriert";
+
+                var item = new ComboBoxItem
+                {
+                    Content = engine.IsAvailable
+                        ? engine.DisplayName
+                        : $"{engine.DisplayName} ({statusText})",
+                    Tag = engine.EngineId,
+                    IsEnabled = true, // Immer waehlbar
+                    ToolTip = $"{engine.DisplayName} - {statusText}"
+                };
+
+                TtsEngineCombo.Items.Add(item);
+
+                // Standard-Engine auswaehlen
+                if (engine.EngineId == activeEngineId ||
+                    (string.IsNullOrEmpty(activeEngineId) && engine.EngineId == "External"))
+                {
+                    TtsEngineCombo.SelectedItem = item;
+                }
+            }
+
+            // Fallback: Erste Engine auswaehlen
+            if (TtsEngineCombo.SelectedItem == null && TtsEngineCombo.Items.Count > 0)
+            {
+                TtsEngineCombo.SelectedIndex = 0;
+            }
+        }
+
+        /// <summary>
+        /// Event-Handler fuer TTS-Engine Auswahl.
+        /// </summary>
+        private void TtsEngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Guard: Noch nicht initialisiert waehrend InitializeComponent()
+            if (TtsEngineCombo?.SelectedItem == null) return;
+
+            var selectedItem = TtsEngineCombo.SelectedItem as ComboBoxItem;
+            var engineId = selectedItem?.Tag?.ToString();
+
+            if (!string.IsNullOrEmpty(engineId))
+            {
+                TtsEngineSettings.Instance.ActiveEngineId = engineId;
+                TtsEngineSettings.Instance.Save();
+
+                // Provider-Text aktualisieren
+                var engine = TtsEngineManager.Instance.GetEngine(engineId);
+                if (engine != null)
+                {
+                    TtsProviderText.Text = $"TTS: {engine.DisplayName}";
+                }
+            }
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -1745,8 +1920,8 @@ namespace WowQuestTtsTool
         {
             try
             {
-                var maleVoiceId = _exportSettings.MaleVoiceId;
-                var femaleVoiceId = _exportSettings.FemaleVoiceId;
+                var maleVoiceId = GetMaleVoiceIdForSelectedEngine();
+                var femaleVoiceId = GetFemaleVoiceIdForSelectedEngine();
 
                 if (string.IsNullOrEmpty(maleVoiceId) || string.IsNullOrEmpty(femaleVoiceId))
                 {
@@ -1769,7 +1944,7 @@ namespace WowQuestTtsTool
                     Directory.CreateDirectory(maleDir);
                 }
 
-                var maleAudio = await _ttsService.GenerateMp3Async(ttsText, _exportSettings.LanguageCode, maleVoiceId);
+                var maleAudio = await GenerateAudioWithSelectedEngineAsync(ttsText, "male");
                 if (maleAudio != null && maleAudio.Length > 0)
                 {
                     await File.WriteAllBytesAsync(malePath, maleAudio, ct);
@@ -1796,7 +1971,7 @@ namespace WowQuestTtsTool
                     Directory.CreateDirectory(femaleDir);
                 }
 
-                var femaleAudio = await _ttsService.GenerateMp3Async(ttsText, _exportSettings.LanguageCode, femaleVoiceId);
+                var femaleAudio = await GenerateAudioWithSelectedEngineAsync(ttsText, "female");
                 if (femaleAudio != null && femaleAudio.Length > 0)
                 {
                     await File.WriteAllBytesAsync(femalePath, femaleAudio, ct);
@@ -2027,10 +2202,8 @@ namespace WowQuestTtsTool
                 }
 
                 // TTS generieren (mit Voice-Profil)
-                var audioBytes = await _ttsService.GenerateMp3Async(
-                    text,
-                    _exportSettings.LanguageCode,
-                    voiceProfile);
+                var gender = voiceProfile.Contains("female") ? "female" : "male";
+                var audioBytes = await GenerateAudioWithSelectedEngineAsync(text, gender);
 
                 // Datei schreiben
                 await File.WriteAllBytesAsync(fullPath, audioBytes);
@@ -2193,10 +2366,8 @@ namespace WowQuestTtsTool
                         }
 
                         // TTS generieren
-                        var audioBytes = await _ttsService.GenerateMp3Async(
-                            text,
-                            _exportSettings.LanguageCode,
-                            voiceProfile);
+                        var gender = voiceProfile.Contains("female") ? "female" : "male";
+                        var audioBytes = await GenerateAudioWithSelectedEngineAsync(text, gender, ct: _batchCancellation?.Token ?? default);
 
                         // Datei schreiben
                         await File.WriteAllBytesAsync(fullPath, audioBytes, _batchCancellation.Token);
@@ -2368,14 +2539,14 @@ namespace WowQuestTtsTool
 
                 // Männliche Stimme generieren
                 StatusText.Text = $"Quest {SelectedQuest.QuestId}: Generiere männliche Stimme...";
-                var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                var maleAudio = await GenerateAudioWithSelectedEngineAsync(text, "male", ct: _batchCancellation?.Token ?? default);
                 await File.WriteAllBytesAsync(malePath, maleAudio);
                 SelectedQuest.HasMaleTts = true;
                 AudioIndexService.Instance.AddOrUpdateEntry(SelectedQuest.QuestId, malePath);
 
                 // Weibliche Stimme generieren
                 StatusText.Text = $"Quest {SelectedQuest.QuestId}: Generiere weibliche Stimme...";
-                var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                var femaleAudio = await GenerateAudioWithSelectedEngineAsync(text, "female", ct: _batchCancellation?.Token ?? default);
                 await File.WriteAllBytesAsync(femalePath, femaleAudio);
                 SelectedQuest.HasFemaleTts = true;
                 AudioIndexService.Instance.AddOrUpdateEntry(SelectedQuest.QuestId, femalePath);
@@ -2629,7 +2800,7 @@ namespace WowQuestTtsTool
                         StatusText.Text = $"Quest {quest.QuestId}: Generiere maennliche Stimme...";
                     });
 
-                    var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                    var maleAudio = await GenerateAudioWithSelectedEngineAsync(text, "male", ct: _batchCancellation?.Token ?? default);
                     await File.WriteAllBytesAsync(malePath, maleAudio, cancellationToken);
                     quest.HasMaleTts = true;
                     result.MaleGenerated = true;
@@ -2650,7 +2821,7 @@ namespace WowQuestTtsTool
                         StatusText.Text = $"Quest {quest.QuestId}: Generiere weibliche Stimme...";
                     });
 
-                    var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                    var femaleAudio = await GenerateAudioWithSelectedEngineAsync(text, "female", ct: _batchCancellation?.Token ?? default);
                     await File.WriteAllBytesAsync(femalePath, femaleAudio, cancellationToken);
                     quest.HasFemaleTts = true;
                     result.FemaleGenerated = true;
@@ -2844,7 +3015,7 @@ namespace WowQuestTtsTool
                         bool shouldGenerateMale = ForceReTtsExisting || !maleAlreadyVoiced || !File.Exists(malePath);
                         if (shouldGenerateMale)
                         {
-                            var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                            var maleAudio = await GenerateAudioWithSelectedEngineAsync(text, "male", ct: _batchCancellation?.Token ?? default);
                             await File.WriteAllBytesAsync(malePath, maleAudio, _batchCancellation.Token);
                             quest.HasMaleTts = true;
                             voicesGenerated++;
@@ -2864,7 +3035,7 @@ namespace WowQuestTtsTool
                         bool shouldGenerateFemale = ForceReTtsExisting || !femaleAlreadyVoiced || !File.Exists(femalePath);
                         if (shouldGenerateFemale)
                         {
-                            var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                            var femaleAudio = await GenerateAudioWithSelectedEngineAsync(text, "female", ct: _batchCancellation?.Token ?? default);
                             await File.WriteAllBytesAsync(femalePath, femaleAudio, _batchCancellation.Token);
                             quest.HasFemaleTts = true;
                             voicesGenerated++;
@@ -3117,7 +3288,7 @@ namespace WowQuestTtsTool
 
                             if (shouldGenerate)
                             {
-                                var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                                var maleAudio = await GenerateAudioWithSelectedEngineAsync(text, "male", ct: _batchCancellation?.Token ?? default);
                                 await File.WriteAllBytesAsync(malePath, maleAudio, _batchCancellation.Token);
                                 quest.HasMaleTts = true;
                                 voicesGenerated++;
@@ -3143,7 +3314,7 @@ namespace WowQuestTtsTool
 
                             if (shouldGenerate)
                             {
-                                var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                                var femaleAudio = await GenerateAudioWithSelectedEngineAsync(text, "female", ct: _batchCancellation?.Token ?? default);
                                 await File.WriteAllBytesAsync(femalePath, femaleAudio, _batchCancellation.Token);
                                 quest.HasFemaleTts = true;
                                 voicesGenerated++;
@@ -3354,7 +3525,7 @@ namespace WowQuestTtsTool
                         // Männliche Stimme
                         if (!quest.HasMaleTts || !File.Exists(malePath))
                         {
-                            var maleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.MaleVoiceId);
+                            var maleAudio = await GenerateAudioWithSelectedEngineAsync(text, "male", ct: _batchCancellation?.Token ?? default);
                             await File.WriteAllBytesAsync(malePath, maleAudio, _batchCancellation.Token);
                             quest.HasMaleTts = true;
                             voicesGenerated++;
@@ -3363,7 +3534,7 @@ namespace WowQuestTtsTool
                         // Weibliche Stimme
                         if (!quest.HasFemaleTts || !File.Exists(femalePath))
                         {
-                            var femaleAudio = await _ttsService.GenerateMp3Async(text, _exportSettings.LanguageCode, _exportSettings.FemaleVoiceId);
+                            var femaleAudio = await GenerateAudioWithSelectedEngineAsync(text, "female", ct: _batchCancellation?.Token ?? default);
                             await File.WriteAllBytesAsync(femalePath, femaleAudio, _batchCancellation.Token);
                             quest.HasFemaleTts = true;
                             voicesGenerated++;
@@ -3442,20 +3613,22 @@ namespace WowQuestTtsTool
             long totalChars = quests.Sum(q => (long)(q.TtsText?.Length ?? 0));
             var (effectiveChars, estimatedTokens, estimatedCost) = _exportSettings.CalculateCostEstimate(totalChars, voiceCount);
 
-            // Stimmen-Info aufbauen
+            // Stimmen-Info aufbauen (von ausgewaehlter Engine)
+            var maleVoice = GetMaleVoiceIdForSelectedEngine();
+            var femaleVoice = GetFemaleVoiceIdForSelectedEngine();
             string voiceInfo;
             if (voiceCount == 2)
             {
-                voiceInfo = $"Maennliche Stimme: {_exportSettings.MaleVoiceId}\n" +
-                           $"Weibliche Stimme: {_exportSettings.FemaleVoiceId}";
+                voiceInfo = $"Maennliche Stimme: {maleVoice}\n" +
+                           $"Weibliche Stimme: {femaleVoice}";
             }
             else if (genderLabel == "maennlich")
             {
-                voiceInfo = $"Stimme: {_exportSettings.MaleVoiceId} (maennlich)";
+                voiceInfo = $"Stimme: {maleVoice} (maennlich)";
             }
             else
             {
-                voiceInfo = $"Stimme: {_exportSettings.FemaleVoiceId} (weiblich)";
+                voiceInfo = $"Stimme: {femaleVoice} (weiblich)";
             }
 
             var message = $"Batch-TTS Kostenvorhersage:\n\n" +
@@ -3498,6 +3671,18 @@ namespace WowQuestTtsTool
             SessionTokenEstimate = 0;
             SessionCostEstimate = 0;
             StatusText.Text = "Session-Tracker zurückgesetzt.";
+        }
+
+        /// <summary>
+        /// Zeigt das TTS-Nutzungsstatistik-Fenster an.
+        /// </summary>
+        private void OnShowUsageDetailsClick(object sender, RoutedEventArgs e)
+        {
+            var usageWindow = new TtsUsageWindow
+            {
+                Owner = this
+            };
+            usageWindow.ShowDialog();
         }
 
         /// <summary>

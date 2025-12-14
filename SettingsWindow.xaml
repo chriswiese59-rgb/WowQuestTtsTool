@@ -15,6 +15,219 @@
 
         <!-- TabControl für verschiedene Einstellungen -->
         <TabControl Grid.Row="0">
+            <!-- TTS-Engines Tab (NEU) -->
+            <TabItem Header="TTS-Engines">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="TTS-Engines Konfiguration"
+                                   FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
+
+                        <!-- Standard-Engine Auswahl -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="Standard-Engine:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="DefaultEngineCombo" Height="28"
+                                      SelectionChanged="DefaultEngineCombo_SelectionChanged">
+                                <ComboBoxItem Content="ElevenLabs (External)" Tag="External"/>
+                                <ComboBoxItem Content="OpenAI TTS" Tag="OpenAI"/>
+                                <ComboBoxItem Content="Google Cloud TTS" Tag="Gemini"/>
+                                <ComboBoxItem Content="Claude Audio (nicht verfuegbar)" Tag="Claude" IsEnabled="False"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- OpenAI TTS Einstellungen -->
+                        <GroupBox Header="OpenAI TTS" Padding="10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- API Key -->
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="API-Key:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <PasswordBox x:Name="OpenAiApiKeyBox" Grid.Row="0" Grid.Column="1" Height="28" Padding="8,5" Margin="0,0,0,8"
+                                                 PasswordChanged="OpenAiApiKeyBox_PasswordChanged"/>
+                                    <Button Grid.Row="0" Grid.Column="2" Content="Zeigen" Width="60" Margin="5,0,0,8"
+                                            Click="ToggleOpenAiApiKeyVisibility"/>
+
+                                    <!-- Model -->
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Modell:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <ComboBox x:Name="OpenAiModelCombo" Grid.Row="1" Grid.Column="1" Height="28" Margin="0,0,0,8"
+                                              Grid.ColumnSpan="2">
+                                        <ComboBoxItem Content="tts-1 (Standard)" Tag="tts-1"/>
+                                        <ComboBoxItem Content="tts-1-hd (Hochqualitaet)" Tag="tts-1-hd"/>
+                                    </ComboBox>
+
+                                    <!-- Male Voice -->
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Maennl. Stimme:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <ComboBox x:Name="OpenAiMaleVoiceCombo" Grid.Row="2" Grid.Column="1" Height="28" Margin="0,0,0,8"
+                                              Grid.ColumnSpan="2">
+                                        <ComboBoxItem Content="onyx (tief, maennlich)" Tag="onyx"/>
+                                        <ComboBoxItem Content="echo (maennlich)" Tag="echo"/>
+                                        <ComboBoxItem Content="alloy (neutral)" Tag="alloy"/>
+                                        <ComboBoxItem Content="fable (neutral)" Tag="fable"/>
+                                    </ComboBox>
+
+                                    <!-- Female Voice -->
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Weibl. Stimme:" VerticalAlignment="Center" Margin="0,0,10,8"/>
+                                    <ComboBox x:Name="OpenAiFemaleVoiceCombo" Grid.Row="3" Grid.Column="1" Height="28" Margin="0,0,0,8"
+                                              Grid.ColumnSpan="2">
+                                        <ComboBoxItem Content="nova (weiblich)" Tag="nova"/>
+                                        <ComboBoxItem Content="shimmer (weiblich)" Tag="shimmer"/>
+                                        <ComboBoxItem Content="alloy (neutral)" Tag="alloy"/>
+                                        <ComboBoxItem Content="fable (neutral)" Tag="fable"/>
+                                    </ComboBox>
+
+                                    <!-- Speed -->
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Geschwindigkeit:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Grid.ColumnSpan="2">
+                                        <Slider x:Name="OpenAiSpeedSlider" Width="150" Minimum="0.25" Maximum="4.0"
+                                                Value="1.0" TickFrequency="0.25" IsSnapToTickEnabled="True"/>
+                                        <TextBlock Text="{Binding ElementName=OpenAiSpeedSlider, Path=Value, StringFormat={}{0:F2}}"
+                                                   Margin="10,0,0,0" Width="35" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button Content="Test TTS" Width="80" Height="28" Click="TestOpenAiTts_Click"/>
+                                    <TextBlock x:Name="OpenAiStatusText" Text="" VerticalAlignment="Center" Margin="10,0,0,0"
+                                               Foreground="Gray"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Google Cloud TTS -->
+                        <GroupBox Header="Google Cloud TTS" Padding="10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <Border Background="#E8F5E9" BorderBrush="#81C784" BorderThickness="1"
+                                        CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                                    <TextBlock TextWrapping="Wrap" FontSize="12">
+                                        Google Cloud Text-to-Speech bietet hochwertige Stimmen.
+                                        Du kannst entweder einen API-Key oder eine Service Account JSON-Datei verwenden.
+                                    </TextBlock>
+                                </Border>
+
+                                <!-- API-Key Authentifizierung -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="API-Key:" VerticalAlignment="Center"/>
+                                    <PasswordBox x:Name="GoogleApiKeyBox" Grid.Column="1" Height="28" Padding="8,5"
+                                                 PasswordChanged="GoogleApiKeyBox_PasswordChanged"
+                                                 ToolTip="Google Cloud API-Key (Alternative zu Service Account)"/>
+                                    <Button Grid.Column="2" Content="Anzeigen" Width="65" Margin="5,0,0,0"
+                                            Click="ToggleGoogleApiKeyVisibility"/>
+                                </Grid>
+
+                                <!-- Service Account JSON -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Service Account:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="GoogleServiceAccountPathBox" Grid.Column="1" Height="28"
+                                             Padding="8,5" IsReadOnly="True"
+                                             ToolTip="Pfad zur Service Account JSON-Datei"/>
+                                    <Button Grid.Column="2" Content="Waehlen..." Width="80" Margin="5,0,0,0"
+                                            Click="SelectGoogleServiceAccount"/>
+                                </Grid>
+
+                                <!-- Voice-Konfiguration -->
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Sprache:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="GoogleLanguageCombo" Grid.Row="0" Grid.Column="1" Height="28"
+                                              SelectedIndex="0" Margin="0,0,10,0">
+                                        <ComboBoxItem Content="Deutsch (DE)" Tag="de-DE"/>
+                                        <ComboBoxItem Content="English (US)" Tag="en-US"/>
+                                        <ComboBoxItem Content="English (GB)" Tag="en-GB"/>
+                                        <ComboBoxItem Content="Francais" Tag="fr-FR"/>
+                                        <ComboBoxItem Content="Espanol" Tag="es-ES"/>
+                                    </ComboBox>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Maennl. Stimme:"
+                                               VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                    <TextBox x:Name="GoogleMaleVoiceBox" Grid.Row="1" Grid.Column="1" Height="28"
+                                             Padding="8,5" Margin="0,8,10,0" Text="de-DE-Neural2-B"
+                                             ToolTip="z.B. de-DE-Neural2-B, de-DE-Wavenet-B"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Weibl. Stimme:"
+                                               VerticalAlignment="Center" Margin="0,8,0,0"/>
+                                    <TextBox x:Name="GoogleFemaleVoiceBox" Grid.Row="1" Grid.Column="3" Height="28"
+                                             Padding="8,5" Margin="0,8,0,0" Text="de-DE-Neural2-C"
+                                             ToolTip="z.B. de-DE-Neural2-C, de-DE-Wavenet-C"/>
+                                </Grid>
+
+                                <!-- Test-Button -->
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button x:Name="TestGoogleTtsButton" Content="Verbindung testen"
+                                            Width="130" Height="28"
+                                            Click="TestGoogleTts_Click"
+                                            Background="#4CAF50" Foreground="White"/>
+                                    <TextBlock x:Name="GoogleTtsStatusText" Text=""
+                                               VerticalAlignment="Center" Margin="10,0,0,0"
+                                               Foreground="Gray"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Claude Audio (Platzhalter) -->
+                        <GroupBox Header="Claude Audio" Padding="10" Margin="0,0,0,12" IsEnabled="False">
+                            <StackPanel>
+                                <Border Background="#F3E5F5" BorderBrush="#CE93D8" BorderThickness="1"
+                                        CornerRadius="4" Padding="10">
+                                    <TextBlock TextWrapping="Wrap" FontSize="12">
+                                        Claude Audio/TTS ist noch nicht verfuegbar.
+                                        Der API-Key kann spaeter fuer Text-Optimierung genutzt werden.
+                                    </TextBlock>
+                                </Border>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="API-Key:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <PasswordBox x:Name="ClaudeApiKeyBox" Grid.Column="1" Height="28" Padding="8,5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Info Box -->
+                        <Border Background="#E3F2FD" BorderBrush="#90CAF9" BorderThickness="1"
+                                CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                            <TextBlock TextWrapping="Wrap" FontSize="12">
+                                Du kannst zwischen verschiedenen TTS-Engines wechseln.
+                                ElevenLabs-Einstellungen findest du im Tab "ElevenLabs".
+                                Die gewaehlte Standard-Engine wird fuer alle Vertonungen verwendet.
+                            </TextBlock>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ElevenLabs Tab -->
             <TabItem Header="ElevenLabs">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">

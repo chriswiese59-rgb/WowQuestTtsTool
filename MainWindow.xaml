@@ -552,6 +552,7 @@
                         <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" Text="Maennl. Voice-ID:" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -577,8 +578,19 @@
                               Margin="8,0,8,0"
                               ToolTip="Wenn aktiviert: Auch bereits vertonte Quests werden im Batch neu generiert (ueberschrieben).&#x0a;Wenn deaktiviert: Bereits vertonte Quests werden uebersprungen (Token sparen)."/>
 
-                    <!-- Batch-Buttons fuer TTS-Generierung -->
+                    <!-- TTS-Engine Auswahl -->
                     <StackPanel Grid.Column="5" Orientation="Horizontal">
+                        <TextBlock Text="Engine:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ComboBox x:Name="TtsEngineCombo"
+                                  Width="100"
+                                  Height="24"
+                                  Margin="0,0,8,0"
+                                  SelectionChanged="TtsEngineCombo_SelectionChanged"
+                                  ToolTip="Waehle die TTS-Engine fuer die Generierung"/>
+                    </StackPanel>
+
+                    <!-- Batch-Buttons fuer TTS-Generierung -->
+                    <StackPanel Grid.Column="6" Orientation="Horizontal">
                         <Button x:Name="BatchMaleTtsButton"
                                 Content="Alle Maennlich"
                                 Width="100"
@@ -1419,6 +1431,15 @@
                             FontSize="10"
                             Click="OnResetSessionTrackerClick"
                             ToolTip="Session-Tracker zuruecksetzen"/>
+                    <Button Content="Details"
+                            Margin="4,0,0,0"
+                            Padding="4,0"
+                            Height="18"
+                            FontSize="10"
+                            Click="OnShowUsageDetailsClick"
+                            Background="#673AB7"
+                            Foreground="White"
+                            ToolTip="Zeigt detaillierte TTS-Nutzungsstatistiken"/>
                 </StackPanel>
             </StatusBarItem>
             <Separator/>
