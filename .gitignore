@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Project-specific ignores
+*.zip
+publish_*/
+test_update_server/
+nul
